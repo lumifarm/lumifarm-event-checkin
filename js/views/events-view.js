@@ -57,8 +57,13 @@ export function renderEvents(container) {
           actionHtml = `<button data-event-id="${ev.id}" class="btn-register btn-primary">立即報名</button>`;
         }
 
+        const posterHtml = ev.posterUrl
+          ? `<img src="${ev.posterUrl}" alt="" class="w-full h-40 object-cover rounded-lg" />`
+          : "";
+
         return `
           <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-3">
+            ${posterHtml}
             <h3 class="text-lg font-bold text-gray-800">${ev.title || ""}</h3>
             <p class="text-sm text-gray-500">${formatDate(ev.date)} · ${ev.location || ""}</p>
             <p class="text-sm text-gray-600 flex-1">${ev.description || ""}</p>
