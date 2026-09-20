@@ -113,6 +113,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 換工點數異動紀錄：本人與主辦方可讀自己的那幾筆；只有主辦方能新增
+    // （發放點數、登記兌換扣點）；紀錄一旦寫入就不能修改或刪除，要更正的話
+    // 用再新增一筆補償紀錄的方式，保留完整歷史。
+    match /workPointTransactions/{txId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
     // 活動評價：所有人可讀；本人只能新增自己的評價一次，修改/刪除交由主辦方處理
     match /reviews/{reviewId} {
       allow read: if true;

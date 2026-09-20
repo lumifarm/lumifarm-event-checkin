@@ -27,6 +27,15 @@ export async function renderEventDetail(container) {
 
   const ev = snap.data();
   const posterHtml = ev.posterUrl ? `<img src="${ev.posterUrl}" alt="" class="w-full rounded-xl mb-4" />` : "";
+  const isLaborExchange = (ev.tags || []).includes("labor-exchange");
+  const workFormHtml =
+    isLaborExchange && ev.workFormUrl
+      ? `<div class="bg-lime-50 border border-lime-300 rounded-xl p-4 text-sm text-lime-800">
+          這是換工活動！完成工作、確認 OK 後，請
+          <a href="${ev.workFormUrl}" target="_blank" rel="noopener" class="underline font-bold">點此上傳成果照片</a>，
+          主辦方審核後會登記換工點數到你的帳號。
+        </div>`
+      : "";
 
   container.innerHTML = `
     <div class="max-w-2xl mx-auto">
@@ -34,6 +43,7 @@ export async function renderEventDetail(container) {
       <h1 class="text-2xl font-bold text-gray-800 mb-2">${ev.title || ""}</h1>
       ${ev.tags && ev.tags.length > 0 ? `<div class="flex flex-wrap gap-1 mb-2">${renderTagBadgesHtml(ev.tags)}</div>` : ""}
       <p class="text-sm text-gray-500 mb-4">${formatDate(ev.date)} · ${ev.location || ""}</p>
+      ${workFormHtml ? `<div class="mb-4">${workFormHtml}</div>` : ""}
       <div class="bg-white rounded-xl shadow p-5 space-y-3">
         <p class="text-gray-700 whitespace-pre-wrap">${ev.description || "（尚無活動說明）"}</p>
         <div class="flex items-center justify-between text-sm text-gray-500 border-t pt-3">

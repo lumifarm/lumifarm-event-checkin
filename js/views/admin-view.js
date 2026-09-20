@@ -16,6 +16,7 @@ import {
 import { listAllUsers } from "../tickets.js";
 import { buildPreEventNotice, buildGmailComposeLink } from "../notices.js";
 import { EVENT_TAGS, renderTagBadgesHtml } from "../tags.js";
+import { awardPoints, listPointsHistoryForUser } from "../workPoints.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -89,6 +90,7 @@ export function renderAdmin(container) {
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="users-section">會員總覽</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="notice-section">行前通知</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="insurance-section">投保名單</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="work-points-section">換工點數</button>
         </nav>
 
         <section id="event-form-section">
@@ -131,6 +133,18 @@ export function renderAdmin(container) {
                   </label>`
                 ).join("")}
               </div>
+            </div>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">換工照片上傳表單網址（選填，「換工活動」標籤才需要）</label>
+              <input
+                id="ev-work-form-url"
+                type="url"
+                placeholder="https://forms.gle/..."
+                class="w-full border rounded-lg p-2"
+              />
+              <p class="text-xs text-gray-500 mt-1">
+                貼上你另外建立的 Google 表單網址（收成果照片＋換工項目），會員在活動詳情頁和票券上會看到連結。
+              </p>
             </div>
             <div>
               <label class="text-sm text-gray-600 block mb-1">活動海報圖片網址（選填）</label>
@@ -228,6 +242,41 @@ export function renderAdmin(container) {
             ></textarea>
           </div>
         </section>
+
+        <section id="work-points-section">
+          <h2 class="text-lg font-bold text-gray-800 mb-3">換工點數</h2>
+          <p class="text-xs text-gray-500 mb-3">
+            換工照片請透過另外建立的 Google 表單收件、審核；審核 OK 之後回到這裡登記點數。發放用正數，兌換課程/農產品用負數扣點，每筆都會留下紀錄。
+          </p>
+          <form id="work-points-form" class="bg-white rounded-xl shadow p-5 space-y-3">
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">會員</label>
+              <select id="wp-user" required class="w-full border rounded-lg p-2"></select>
+            </div>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">相關活動（選填）</label>
+              <select id="wp-event" class="w-full border rounded-lg p-2">
+                <option value="">（不指定）</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-sm text-gray-600 block mb-1">點數（發放用正數，兌換扣點用負數）</label>
+                <input id="wp-points" type="number" required class="w-full border rounded-lg p-2" />
+              </div>
+              <div>
+                <label class="text-sm text-gray-600 block mb-1">說明</label>
+                <input id="wp-reason" type="text" placeholder="例如：10/5 換工-拔草，或 兌換：白米一包" class="w-full border rounded-lg p-2" />
+              </div>
+            </div>
+            <button type="submit" id="wp-submit" class="btn-primary text-sm">登記點數異動</button>
+          </form>
+
+          <div class="mt-4">
+            <h3 class="text-sm font-bold text-gray-600 mb-2">該會員的點數紀錄</h3>
+            <div id="wp-history" class="bg-white rounded-xl shadow divide-y"></div>
+          </div>
+        </section>
       </div>
     </div>`;
 
@@ -262,6 +311,7 @@ export function renderAdmin(container) {
     price: container.querySelector("#ev-price"),
     maxCap: container.querySelector("#ev-maxcap"),
     posterUrl: container.querySelector("#ev-poster-url"),
+    workFormUrl: container.querySelector("#ev-work-form-url"),
   };
 
   const tagCheckboxes = Array.from(container.querySelectorAll(".ev-tag-checkbox"));
@@ -310,6 +360,7 @@ export function renderAdmin(container) {
     fields.price.value = ev.price || 0;
     fields.maxCap.value = ev.maxCap || "";
     fields.posterUrl.value = ev.posterUrl || "";
+    fields.workFormUrl.value = ev.workFormUrl || "";
     showPosterPreview(ev.posterUrl || null);
     setCheckedTags(ev.tags || []);
     formTitleEl.textContent = `編輯活動：${ev.title || ""}`;
@@ -330,6 +381,7 @@ export function renderAdmin(container) {
       price: Number(fields.price.value) || 0,
       maxCap: fields.maxCap.value.trim() === "" ? null : Number(fields.maxCap.value),
       posterUrl: fields.posterUrl.value.trim() || null,
+      workFormUrl: fields.workFormUrl.value.trim() || null,
       tags: getCheckedTags(),
     };
     if (!data.title || !data.date) {
@@ -705,6 +757,96 @@ export function renderAdmin(container) {
     }
   });
 
+  const wpForm = container.querySelector("#work-points-form");
+  const wpUserSelect = container.querySelector("#wp-user");
+  const wpEventSelect = container.querySelector("#wp-event");
+  const wpPointsInput = container.querySelector("#wp-points");
+  const wpReasonInput = container.querySelector("#wp-reason");
+  const wpSubmitBtn = container.querySelector("#wp-submit");
+  const wpHistoryEl = container.querySelector("#wp-history");
+
+  let wpUsersCache = [];
+  let wpEventsCache = [];
+
+  async function populateWorkPointsForm() {
+    wpUsersCache = await listAllUsers();
+    wpUsersCache.sort((a, b) => (a.name || "").localeCompare(b.name || "", "zh-Hant"));
+    wpUserSelect.innerHTML = wpUsersCache
+      .map((u) => `<option value="${u.id}">${u.name || "（未命名）"}（${u.email || ""}）· 目前 ${u.workPoints || 0} 點</option>`)
+      .join("");
+
+    wpEventsCache = await listEvents();
+    wpEventSelect.innerHTML =
+      `<option value="">（不指定）</option>` +
+      wpEventsCache.map((ev) => `<option value="${ev.id}">${ev.title || "（未命名活動）"}</option>`).join("");
+
+    renderWpHistory();
+  }
+
+  async function renderWpHistory() {
+    const userId = wpUserSelect.value;
+    wpHistoryEl.innerHTML = "";
+    if (!userId) return;
+
+    const history = await listPointsHistoryForUser(userId);
+    if (history.length === 0) {
+      wpHistoryEl.innerHTML = `<p class="text-sm text-gray-500 p-4">目前還沒有任何點數紀錄</p>`;
+      return;
+    }
+
+    history.forEach((tx) => {
+      const row = document.createElement("div");
+      row.className = "p-3 flex items-center justify-between gap-3";
+
+      const info = document.createElement("div");
+      const reason = document.createElement("p");
+      reason.className = "text-sm text-gray-700";
+      reason.textContent = tx.reason || "（無說明）";
+      const time = document.createElement("p");
+      time.className = "text-xs text-gray-400";
+      time.textContent = tx.createdAt?.toDate ? tx.createdAt.toDate().toLocaleString("zh-TW") : "";
+      info.append(reason, time);
+
+      const pts = document.createElement("span");
+      pts.className = `text-sm font-bold shrink-0 ${tx.points >= 0 ? "text-emerald-600" : "text-red-600"}`;
+      pts.textContent = tx.points >= 0 ? `+${tx.points}` : `${tx.points}`;
+
+      row.append(info, pts);
+      wpHistoryEl.appendChild(row);
+    });
+  }
+
+  wpUserSelect.addEventListener("change", renderWpHistory);
+
+  wpForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const userId = wpUserSelect.value;
+    const points = Number(wpPointsInput.value);
+    if (!userId || !points) {
+      alert("請選擇會員並輸入不為 0 的點數");
+      return;
+    }
+
+    wpSubmitBtn.disabled = true;
+    try {
+      await awardPoints({
+        userId,
+        points,
+        reason: wpReasonInput.value.trim(),
+        eventId: wpEventSelect.value || null,
+      });
+      wpPointsInput.value = "";
+      wpReasonInput.value = "";
+      await populateWorkPointsForm();
+      wpUserSelect.value = userId;
+      renderWpHistory();
+    } catch (err) {
+      alert("登記失敗：" + err.message);
+    } finally {
+      wpSubmitBtn.disabled = false;
+    }
+  });
+
   const unsubscribe = onAuthStateChanged(auth, async (user) => {
     if (!user) {
       adminGate.textContent = "請先登入。";
@@ -729,6 +871,7 @@ export function renderAdmin(container) {
     renderUsersOverview();
     populateNoticeEventSelect();
     populateInsuranceEventSelect();
+    populateWorkPointsForm();
   });
 
   return () => unsubscribe();

@@ -5,6 +5,7 @@ export const EVENT_TAGS = [
   { id: "field-experience", label: "田間體驗", icon: "🌱", badgeClass: "badge-tag-green" },
   { id: "coop-economy", label: "合作經濟", icon: "🤝", badgeClass: "badge-tag-blue" },
   { id: "guided-tour", label: "走讀導覽", icon: "🚶", badgeClass: "badge-tag-teal" },
+  { id: "labor-exchange", label: "換工活動", icon: "🧑‍🌾", badgeClass: "badge-tag-lime" },
 ];
 
 export function getTagInfo(id) {

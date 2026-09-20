@@ -3,6 +3,7 @@ import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/f
 import { getMyTickets, renderTicketQRCode, getMyStats, paymentStatusLabel } from "../tickets.js";
 import { BANK_INFO, submitPaymentNotice } from "../payment.js";
 import { requestCancellation, calcRefundPercent } from "../events.js";
+import { getMyPointsBalance, getMyPointsHistory } from "../workPoints.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -197,6 +198,14 @@ export function renderTickets(container) {
       actionHtml = `<button data-cancel-id="${t.id}" class="btn-cancel-ticket inline-block mt-3 text-sm text-red-600 underline">申請取消報名</button>`;
     }
 
+    const isLaborExchange = (t.event?.tags || []).includes("labor-exchange");
+    const workFormHtml =
+      isLaborExchange && t.event?.workFormUrl && !t.isCancelled
+        ? `<div class="mt-2 bg-lime-50 border border-lime-300 rounded-lg p-2 text-xs text-lime-800">
+            換工完成後請<a href="${t.event.workFormUrl}" target="_blank" rel="noopener" class="underline font-bold">上傳成果照片</a>，主辦方審核後會登記換工點數。
+          </div>`
+        : "";
+
     return `
       <div class="bg-white rounded-xl shadow p-5 flex flex-col md:flex-row gap-4 items-start">
         <div id="qr-${t.id}" class="shrink-0"></div>
@@ -212,6 +221,7 @@ export function renderTickets(container) {
             </span>
             ${cancelPending ? `<span class="badge badge-yellow">取消審核中</span>` : ""}
           </div>
+          ${workFormHtml}
           ${cancelPending || isPast ? "" : paymentSectionHtml(t)}
           ${actionHtml}
         </div>
@@ -230,7 +240,26 @@ export function renderTickets(container) {
     profileSection.classList.remove("hidden");
     ticketList.classList.remove("hidden");
 
-    const stats = await getMyStats();
+    const [stats, pointsBalance, pointsHistory] = await Promise.all([
+      getMyStats(),
+      getMyPointsBalance(),
+      getMyPointsHistory(),
+    ]);
+    const pointsHistoryHtml =
+      pointsHistory.length > 0
+        ? pointsHistory
+            .map((tx) => {
+              const time = tx.createdAt?.toDate ? tx.createdAt.toDate().toLocaleDateString("zh-TW") : "";
+              return `<li class="flex items-center justify-between py-1">
+                <span class="text-gray-600">${time}　${tx.reason || "（無說明）"}</span>
+                <span class="font-bold ${tx.points >= 0 ? "text-emerald-600" : "text-red-600"}">${
+                tx.points >= 0 ? `+${tx.points}` : tx.points
+              }</span>
+              </li>`;
+            })
+            .join("")
+        : `<li class="text-gray-400 py-1">尚無點數紀錄</li>`;
+
     profileSection.innerHTML = `
       <div class="flex items-center gap-4">
         <img src="${user.photoURL || ""}" class="w-16 h-16 rounded-full border" />
@@ -239,7 +268,7 @@ export function renderTickets(container) {
           <p class="text-sm text-gray-500">${user.email || ""}</p>
         </div>
       </div>
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 text-center">
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-4 text-center">
         <div class="bg-white rounded-lg shadow p-3">
           <p class="text-2xl font-bold text-emerald-600">${stats.total}</p>
           <p class="text-xs text-gray-500">總報名次數</p>
@@ -256,7 +285,15 @@ export function renderTickets(container) {
           <p class="text-2xl font-bold text-emerald-600">${stats.rate}%</p>
           <p class="text-xs text-gray-500">出席率</p>
         </div>
-      </div>`;
+        <div class="bg-white rounded-lg shadow p-3">
+          <p class="text-2xl font-bold text-lime-700">${pointsBalance}</p>
+          <p class="text-xs text-gray-500">換工點數</p>
+        </div>
+      </div>
+      <details class="mt-2">
+        <summary class="text-sm text-gray-500 cursor-pointer">換工點數紀錄</summary>
+        <ul class="text-sm mt-2 bg-white rounded-lg shadow p-3 divide-y">${pointsHistoryHtml}</ul>
+      </details>`;
 
     const tickets = await getMyTickets();
     if (tickets.length === 0) {

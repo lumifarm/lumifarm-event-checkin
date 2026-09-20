@@ -83,6 +83,7 @@ export async function createEvent(data) {
     maxCap: data.maxCap ?? null,
     posterUrl: data.posterUrl || null,
     tags: data.tags || [],
+    workFormUrl: data.workFormUrl || null,
     currentCount: 0,
   });
 }
@@ -97,6 +98,7 @@ export async function updateEvent(eventId, data) {
     maxCap: data.maxCap ?? null,
     posterUrl: data.posterUrl || null,
     tags: data.tags || [],
+    workFormUrl: data.workFormUrl || null,
   });
 }
 

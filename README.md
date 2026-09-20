@@ -11,7 +11,7 @@
 - **主辦專區**：活動新增/編輯/刪除（含貼上海報圖片網址）、核對匯款、審核取消申請、會員總覽、行前通知都在這一頁。
 - **活動詳細頁**：活動列表跟我的票券的活動名稱都是連結，點進去可以看到該活動的完整說明、海報、地點、費用與名額。
 - **行前通知**：主辦方在「主辦專區」選一個活動、輸入通知內容，系統會列出目前有效報名者（不含已取消）的人數，按「產生郵件內容」會先在頁面上顯示可編輯的主旨與內文，確認沒問題後按「開啟 Gmail 並發送」會在新分頁開啟 Gmail 網頁版寫信視窗（用目前登入的 Gmail 帳號），收件人用密件副本帶入所有報名者，真正送出還是要在 Gmail 裡按一次送出。
-- **活動標籤 + 標籤篩選**：新增/編輯活動時可以複選標籤（食農教育、身心平衡、田間體驗、合作經濟、走讀導覽），活動列表、詳細頁、主辦專區的活動管理都會用對應顏色的色塊顯示，方便一眼看出活動類型；活動列表上方也有標籤篩選按鈕（只列出目前真的有活動用到的標籤），可以只看某一類活動。
+- **活動標籤 + 標籤篩選**：新增/編輯活動時可以複選標籤（食農教育、身心平衡、田間體驗、合作經濟、走讀導覽、換工活動），活動列表、詳細頁、主辦專區的活動管理都會用對應顏色的色塊顯示，方便一眼看出活動類型；活動列表上方也有標籤篩選按鈕（只列出目前真的有活動用到的標籤），可以只看某一類活動。
 - **評價與出席率**：活動報到後即可填寫星級評價與文字回饋；個人中心會顯示總報名次數、實際出席次數、取消次數與出席率。
 - **新手教學**：第一次造訪網站會彈出引導視窗，帶去「新手教學」頁面說明整個使用流程（含如何取消、如何看活動詳情）。
 - **依身分顯示導覽列**：「報到管理」「主辦專區」只有登入的主辦方帳號看得到，一般會員或未登入的訪客不會看到這兩個連結（實際權限仍然由 Firestore 規則把關，這裡只是避免介面雜訊）。
@@ -19,6 +19,7 @@
 - **手機版漢堡選單**：導覽列在手機寬度下會收成漢堡選單（右上角按鈕點開/收起），點任一連結會自動收起選單；桌機寬度維持原本橫向排列，不受影響。
 - **FAQ／常見問題頁面**：`#/faq`，整理登入、繳費、取消、報到、評價等常見問題的問答，導覽列有「常見問題」連結。
 - **投保個資（資料維護）**：活動需要幫參加者投保，點右上角自己的頭像/名稱會出現「資料維護」選項（`#/profile`），可以填寫並隨時修改真實姓名、身分證字號、出生年月日。這三個欄位沒填齊之前無法報名任何活動，報名按鈕會被 Firestore 規則擋下來並引導去補資料；主辦專區也能匯出某活動的投保名單（詳見下方「投保個資與投保名單」）。
+- **換工點數**：活動標籤多一個「換工活動」，代表農務協助（拔草、澆水、種植等）。這類活動的照片審核走外部 Google 表單（主辦方自建），系統這邊只負責登記與呈現點數，詳見下方「換工點數」一節。
 
 ## 架構
 
@@ -43,6 +44,7 @@ js/reviews.js             送出活動評價
 js/notices.js             行前通知的郵件內容組裝（Gmail 網頁版寫信連結）
 js/tags.js                活動標籤分類清單（顏色、圖示）
 js/profile.js             投保個資（真實姓名/身分證字號/出生年月日）的讀取、驗證、更新
+js/workPoints.js          換工點數的讀取、發放/扣點、歷史紀錄
 js/views/*.js             各路由畫面：把 HTML 畫進傳入的容器、回傳 cleanup 函式
 js/views/faq-view.js      常見問題頁面（純靜態問答內容）
 js/views/profile-view.js  資料維護頁面（#/profile）
@@ -53,10 +55,11 @@ firestore.rules           Firestore 安全性規則
 
 | Collection | 欄位 |
 | --- | --- |
-| `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, cancelledEvents, createdAt, realName（真實姓名，可省略表示未填）, nationalId（身分證字號，可省略表示未填）, birthDate（出生年月日字串 YYYY-MM-DD，可省略表示未填） |
-| `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), currentCount (number), posterUrl (string, 可省略), tags (string[], 值對應 `js/tags.js` 的 `EVENT_TAGS` id) |
+| `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, cancelledEvents, createdAt, realName（真實姓名，可省略表示未填）, nationalId（身分證字號，可省略表示未填）, birthDate（出生年月日字串 YYYY-MM-DD，可省略表示未填）, workPoints（換工點數餘額，number，可省略表示 0，只有主辦方能寫） |
+| `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), currentCount (number), posterUrl (string, 可省略), workFormUrl（換工照片上傳表單網址，string，可省略）, tags (string[], 值對應 `js/tags.js` 的 `EVENT_TAGS` id) |
 | `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, cancelRequestStatus ("pending"/"approved"/null), cancelRequestedAt, cancelRefundPercent, securityCode, createdAt |
 | `reviews/{reviewId}` | userId, eventId, rating (1-5), comment, createdAt |
+| `workPointTransactions/{txId}` | userId, points（number，正數＝發放、負數＝兌換扣點）, reason（string，說明文字）, eventId（可省略）, createdAt, createdBy（登記的主辦方 uid） |
 | `admins/{uid}` | 只要文件存在即代表該使用者是主辦方（可放任意欄位，例如 `{ addedAt: ... }`） |
 
 ## 繳費流程
@@ -82,6 +85,18 @@ firestore.rules           Firestore 安全性規則
 - **會員總覽多一個欄位**：「會員總覽」表格新增「投保資料」欄，用 ✓/✗ 表示該會員是否已經填齊三個欄位，不會直接顯示身分證字號本身，避免在日常瀏覽時不必要地曝光敏感個資。
 
 ⚠️ 身分證字號、出生年月日都是高度敏感個資，「投保名單」產生的內容只在需要投保時使用，用完（複製給保險公司、或下載存檔辦完保險）之後盡快清掉瀏覽器裡的內容，不要不必要地截圖、外流或長期留存在其他地方。
+
+## 換工點數
+
+光農合作社群的換工制度：會員來農場協助拔草、澆水、種植等農務，完成後累積點數，將來可以折抵課程費用或兌換農產品。設計上刻意把「照片審核」跟「點數登記」分成兩段，避免因為 Firebase 新專案的 Cloud Storage 需要升級 Blaze 付費方案，而卡住這個常常要上傳照片的流程：
+
+1. **標記換工活動**：新增/編輯活動時勾選「換工活動」標籤，並在「換工照片上傳表單網址」欄位貼上主辦方另外建立的 Google 表單連結（表單建議欄位：姓名、Email、活動、成果照片、換工項目說明——這個表單要主辦方自己在 Google Forms 建立，系統不會自動產生）。
+2. **會員上傳照片**：這類活動的活動詳情頁、以及「我的票券」上的票券卡片，都會出現「點此上傳成果照片」的連結，直接連到主辦方設定的 Google 表單。
+3. **主辦方審核與登記點數**：主辦方在 Google 表單/試算表那邊看照片、確認工作完成 OK，回到「主辦專區」的「換工點數」區塊：選會員、（選填）選相關活動、輸入點數與說明，按「登記點數異動」。發放用正數，之後會員要兌換課程/農產品時，同樣在這裡輸入負數登記扣點。
+4. **點數與紀錄**：每一筆異動都存成 `workPointTransactions` 的一筆不可修改紀錄，`users/{uid}.workPoints` 是這些紀錄加總出來的目前餘額（用 Firestore `increment` 保證兩者不會對不起來）。會員在「我的票券」上方會看到目前點數餘額，點開「換工點數紀錄」可以看到每一筆的說明與時間；主辦專區選會員時也能看到同一份紀錄。
+5. **權限**：`workPoints` 沒有列在會員自己能更新的欄位清單裡，一般會員完全無法自己改點數，只有主辦方（`isAdmin()`）能寫；`workPointTransactions` 也只有主辦方能新增，一般人只能讀自己的那幾筆，而且規則禁止修改/刪除既有紀錄——要更正的話用再登記一筆補償紀錄，保留完整歷史軌跡。
+
+之後如果想把「上傳照片」整合進系統本身（而不是外部表單），需要先讓 Firebase 專案升級到 Blaze 方案啟用 Cloud Storage；免費額度通常足夠這種低流量用途，但升級需要先綁信用卡，所以先維持現在「Google 表單 + 手動登記」的作法。
 
 ## 活動海報圖片
 
@@ -168,6 +183,7 @@ npx serve .
 - `admins` collection 完全禁止透過前端寫入，只能在 Firebase Console 手動新增，避免使用者自行把自己加進主辦方名單。
 - QR Code 內容包含 `ticketId` 與隨機產生的 `securityCode`，報到掃描時會比對 Firestore 內存的驗證碼，避免有人自行編造 QR Code 內容混入報到。
 - 報名（`tickets` 的 create，以及取消後重新報名的 update 分支）都會用 `hasCompleteProfile()` 讀本人 `users/{uid}` 的 `realName`／`nationalId`／`birthDate`，沒填齊就擋下來，前端沒攔到的話規則這邊會是最後一關。
+- `users/{uid}.workPoints`（換工點數餘額）不在會員自己能更新的欄位清單裡，只有主辦方能改；`workPointTransactions` 只有主辦方能新增、任何人都不能修改或刪除既有紀錄，確保點數異動有完整、不可竄改的歷史軌跡。
 
 ## 可能的後續擴充（非本版本範圍）
 
