@@ -2,7 +2,16 @@ import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { isCurrentUserAdmin } from "../checkin.js";
 import { listPendingPayments, confirmPayment } from "../payment.js";
-import { listEvents, createEvent, updateEvent, deleteEvent } from "../events.js";
+import {
+  listEvents,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  listPendingCancellations,
+  approveCancellation,
+  rejectCancellation,
+} from "../events.js";
+import { listAllUsers } from "../tickets.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -109,6 +118,16 @@ export function renderAdmin(container) {
           <h2 class="text-lg font-bold text-gray-800 mb-3">待確認繳費</h2>
           <div id="pending-payments" class="space-y-3"></div>
         </section>
+
+        <section>
+          <h2 class="text-lg font-bold text-gray-800 mb-3">取消申請</h2>
+          <div id="pending-cancellations" class="space-y-3"></div>
+        </section>
+
+        <section>
+          <h2 class="text-lg font-bold text-gray-800 mb-3">會員總覽</h2>
+          <div id="user-overview" class="bg-white rounded-xl shadow overflow-x-auto"></div>
+        </section>
       </div>
     </div>`;
 
@@ -116,6 +135,8 @@ export function renderAdmin(container) {
   const adminSection = container.querySelector("#admin-section");
   const pendingEl = container.querySelector("#pending-payments");
   const eventListEl = container.querySelector("#event-manage-list");
+  const cancellationsEl = container.querySelector("#pending-cancellations");
+  const userOverviewEl = container.querySelector("#user-overview");
 
   const eventForm = container.querySelector("#event-form");
   const formTitleEl = container.querySelector("#event-form-title");
@@ -257,6 +278,120 @@ export function renderAdmin(container) {
     items.forEach((p) => pendingEl.appendChild(renderPaymentRow(p, renderPendingPayments)));
   }
 
+  function renderCancelRow(c, onDone) {
+    const row = document.createElement("div");
+    row.className = "bg-white rounded-lg shadow p-4 flex items-center justify-between gap-3";
+
+    const info = document.createElement("div");
+    const title = document.createElement("p");
+    title.className = "font-bold text-gray-800";
+    title.textContent = c.event?.title || "活動已刪除";
+
+    const who = document.createElement("p");
+    who.className = "text-sm text-gray-600";
+    who.textContent = `${c.user?.name || "未知使用者"}（${c.user?.email || ""}）`;
+
+    const detail = document.createElement("p");
+    detail.className = "text-sm text-gray-500";
+    detail.textContent = `申請時間：${formatDate(c.cancelRequestedAt)}　依政策退款：${c.cancelRefundPercent ?? 0}%`;
+
+    info.append(title, who, detail);
+
+    const btnRow = document.createElement("div");
+    btnRow.className = "flex gap-2 shrink-0";
+
+    const approveBtn = document.createElement("button");
+    approveBtn.className = "btn-primary text-sm";
+    approveBtn.textContent = "核准取消";
+    approveBtn.addEventListener("click", async () => {
+      approveBtn.disabled = true;
+      rejectBtn.disabled = true;
+      try {
+        await approveCancellation(c.id);
+        onDone();
+      } catch (e) {
+        alert("核准失敗：" + e.message);
+        approveBtn.disabled = false;
+        rejectBtn.disabled = false;
+      }
+    });
+
+    const rejectBtn = document.createElement("button");
+    rejectBtn.className = "text-sm text-red-600 underline";
+    rejectBtn.textContent = "駁回申請";
+    rejectBtn.addEventListener("click", async () => {
+      if (!confirm("確定要駁回這筆取消申請嗎？駁回後活動照常進行，票券恢復正常，使用者之後可以再重新申請。")) {
+        return;
+      }
+      approveBtn.disabled = true;
+      rejectBtn.disabled = true;
+      try {
+        await rejectCancellation(c.id);
+        onDone();
+      } catch (e) {
+        alert("駁回失敗：" + e.message);
+        approveBtn.disabled = false;
+        rejectBtn.disabled = false;
+      }
+    });
+
+    btnRow.append(approveBtn, rejectBtn);
+    row.append(info, btnRow);
+    return row;
+  }
+
+  async function renderPendingCancellations() {
+    const items = await listPendingCancellations();
+    cancellationsEl.innerHTML = "";
+    if (items.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "text-gray-500 text-sm";
+      empty.textContent = "目前沒有待審核的取消申請";
+      cancellationsEl.appendChild(empty);
+      return;
+    }
+    items.forEach((c) => cancellationsEl.appendChild(renderCancelRow(c, renderPendingCancellations)));
+  }
+
+  function renderUserRow(u) {
+    const tr = document.createElement("tr");
+    tr.className = "border-t";
+    const cells = [u.name || "", u.email || "", u.totalEvents || 0, u.attendedEvents || 0, u.cancelled || 0, `${u.rate}%`];
+    cells.forEach((val, i) => {
+      const td = document.createElement("td");
+      td.className = `p-3 text-sm ${i >= 2 ? "text-center" : ""}`;
+      td.textContent = val;
+      tr.appendChild(td);
+    });
+    return tr;
+  }
+
+  async function renderUsersOverview() {
+    const users = await listAllUsers();
+    userOverviewEl.innerHTML = "";
+    if (users.length === 0) {
+      userOverviewEl.innerHTML = `<p class="text-gray-500 text-sm p-4">目前沒有任何會員資料</p>`;
+      return;
+    }
+
+    const table = document.createElement("table");
+    table.className = "w-full min-w-[600px]";
+    const thead = document.createElement("thead");
+    thead.innerHTML = `
+      <tr class="bg-gray-50 text-left text-xs text-gray-500">
+        <th class="p-3">姓名</th>
+        <th class="p-3">Email</th>
+        <th class="p-3 text-center">報名次數</th>
+        <th class="p-3 text-center">出席次數</th>
+        <th class="p-3 text-center">取消次數</th>
+        <th class="p-3 text-center">出席率</th>
+      </tr>`;
+    const tbody = document.createElement("tbody");
+    users.forEach((u) => tbody.appendChild(renderUserRow(u)));
+    table.append(thead, tbody);
+    userOverviewEl.appendChild(table);
+  }
+
   const unsubscribe = onAuthStateChanged(auth, async (user) => {
     if (!user) {
       adminGate.textContent = "請先登入。";
@@ -277,6 +412,8 @@ export function renderAdmin(container) {
     adminSection.classList.remove("hidden");
     renderEventList();
     renderPendingPayments();
+    renderPendingCancellations();
+    renderUsersOverview();
   });
 
   return () => unsubscribe();

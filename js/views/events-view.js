@@ -46,7 +46,11 @@ export function renderEvents(container) {
           actionHtml = `<button class="btn-disabled" disabled>請先登入</button>`;
         } else if (ticket && !ticket.isCancelled) {
           const pay = paymentStatusLabel(ticket.paymentStatus);
-          actionHtml = `<div class="flex items-center gap-2"><span class="badge badge-blue">已報名</span><span class="badge ${pay.cls}">${pay.text}</span></div>`;
+          const cancelBadge =
+            ticket.cancelRequestStatus === "pending"
+              ? `<span class="badge badge-yellow">取消審核中</span>`
+              : "";
+          actionHtml = `<div class="flex flex-wrap items-center gap-2"><span class="badge badge-blue">已報名</span><span class="badge ${pay.cls}">${pay.text}</span>${cancelBadge}</div>`;
         } else if (full) {
           actionHtml = `<button class="btn-disabled" disabled>名額已滿</button>`;
         } else {

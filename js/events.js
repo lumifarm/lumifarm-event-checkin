@@ -8,6 +8,7 @@ import {
   deleteDoc,
   doc,
   query,
+  where,
   orderBy,
   runTransaction,
   writeBatch,
@@ -119,6 +120,9 @@ export async function registerForEvent(eventId) {
       isCancelled: false,
       cancelledAt: null,
       refundPercent: null,
+      cancelRequestStatus: null,
+      cancelRequestedAt: null,
+      cancelRefundPercent: null,
       securityCode,
       createdAt: serverTimestamp(),
     });
@@ -129,10 +133,16 @@ export async function registerForEvent(eventId) {
   return ticketRef.id;
 }
 
-// 取消報名：還沒報到的票券才能取消，退款比例依「距離活動還有幾天」計算，
-// 票券保留下來（標記 isCancelled）當作紀錄，而不是直接刪除；活動的名額
-// 同時 -1，讓其他人可以遞補。
-export async function cancelTicket(ticketId) {
+function eventDateOf(eventData) {
+  if (!eventData?.date) return null;
+  return eventData.date.toDate ? eventData.date.toDate() : new Date(eventData.date);
+}
+
+// 使用者申請取消：不會立刻取消，只是送出申請並記錄「如果現在核准，退款比例
+// 是多少」；活動名額暫時不釋出，要等主辦方核准後才正式取消（見
+// approveCancellation）。核准前活動照常進行、不退費，跟主辦方核准/駁回
+// 之前使用者的體驗一致。
+export async function requestCancellation(ticketId) {
   const user = auth.currentUser;
   if (!user) throw new Error("請先登入");
 
@@ -144,26 +154,70 @@ export async function cancelTicket(ticketId) {
   if (ticket.userId !== user.uid) throw new Error("無權限操作這張票券");
   if (ticket.isCheckedIn) throw new Error("已經報到的活動無法取消");
   if (ticket.isCancelled) throw new Error("這張票券已經取消過了");
+  if (ticket.cancelRequestStatus === "pending") {
+    throw new Error("已經送出過取消申請，請等候主辦方審核");
+  }
 
-  const eventRef = doc(db, "events", ticket.eventId);
-  const eventSnap = await getDoc(eventRef);
-  const eventData = eventSnap.exists() ? eventSnap.data() : null;
-  const eventDate = eventData?.date?.toDate
-    ? eventData.date.toDate()
-    : eventData?.date
-    ? new Date(eventData.date)
-    : null;
-
+  const eventSnap = await getDoc(doc(db, "events", ticket.eventId));
+  const eventDate = eventDateOf(eventSnap.exists() ? eventSnap.data() : null);
   const refundPercent = eventDate ? calcRefundPercent(eventDate) : 0;
+
+  await updateDoc(ticketRef, {
+    cancelRequestStatus: "pending",
+    cancelRequestedAt: serverTimestamp(),
+    cancelRefundPercent: refundPercent,
+  });
+
+  return refundPercent;
+}
+
+// 給主辦專區用：列出所有待審核的取消申請，附上活動與申請人資訊
+export async function listPendingCancellations() {
+  const q = query(collection(db, "tickets"), where("cancelRequestStatus", "==", "pending"));
+  const snap = await getDocs(q);
+  const tickets = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  return Promise.all(
+    tickets.map(async (t) => {
+      const [eventSnap, userSnap] = await Promise.all([
+        getDoc(doc(db, "events", t.eventId)),
+        getDoc(doc(db, "users", t.userId)),
+      ]);
+      return {
+        ...t,
+        event: eventSnap.exists() ? eventSnap.data() : null,
+        user: userSnap.exists() ? userSnap.data() : null,
+      };
+    })
+  );
+}
+
+// 主辦方核准取消：正式標記 isCancelled、退款比例用申請當下算好的
+// cancelRefundPercent（不是核准當下重新計算，避免主辦方拖延審核反而
+// 讓使用者少退錢），活動名額 -1，該使用者的取消次數 +1。
+export async function approveCancellation(ticketId) {
+  const ticketRef = doc(db, "tickets", ticketId);
+  const ticketSnap = await getDoc(ticketRef);
+  if (!ticketSnap.exists()) throw new Error("找不到這張票券");
+  const ticket = ticketSnap.data();
 
   const batch = writeBatch(db);
   batch.update(ticketRef, {
     isCancelled: true,
     cancelledAt: serverTimestamp(),
-    refundPercent,
+    refundPercent: ticket.cancelRefundPercent ?? 0,
+    cancelRequestStatus: "approved",
   });
-  batch.update(eventRef, { currentCount: increment(-1) });
+  batch.update(doc(db, "events", ticket.eventId), { currentCount: increment(-1) });
+  batch.update(doc(db, "users", ticket.userId), { cancelledEvents: increment(1) });
   await batch.commit();
+}
 
-  return refundPercent;
+// 主辦方駁回取消：票券完全恢復正常，使用者可以之後再重新申請一次
+export async function rejectCancellation(ticketId) {
+  await updateDoc(doc(db, "tickets", ticketId), {
+    cancelRequestStatus: null,
+    cancelRequestedAt: null,
+    cancelRefundPercent: null,
+  });
 }

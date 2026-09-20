@@ -2,7 +2,7 @@ import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { getMyTickets, renderTicketQRCode, getMyStats, paymentStatusLabel } from "../tickets.js";
 import { BANK_INFO, submitPaymentNotice, buildPaymentMailto } from "../payment.js";
-import { cancelTicket, calcRefundPercent } from "../events.js";
+import { requestCancellation, calcRefundPercent } from "../events.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -66,13 +66,14 @@ function showCancelModal({ eventTitle, daysLeft, refundPercent, onConfirm }) {
     <h2 class="text-lg font-bold text-gray-800 mb-2">活動取消須知</h2>
     <p class="text-sm text-gray-700 mb-2">活動：${eventTitle}</p>
     <pre class="text-xs text-gray-600 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 mb-3">${CANCELLATION_POLICY_LINES.join("\n")}</pre>
-    <p class="text-sm font-bold text-gray-800 mb-4">
+    <p class="text-sm font-bold text-gray-800 mb-2">
       ${
         daysLeft === null
           ? "活動時間未定"
           : `距離活動開始還有 ${Math.max(0, Math.floor(daysLeft))} 天，依政策你適用：${refundTierText(refundPercent)}`
       }
-    </p>`;
+    </p>
+    <p class="text-xs text-gray-500 mb-4">送出後需經主辦方審核；審核通過前活動仍照常進行、尚未退費，主辦方駁回的話票券會恢復正常。</p>`;
 
   const btnRow = document.createElement("div");
   btnRow.className = "flex gap-3 justify-end";
@@ -84,17 +85,18 @@ function showCancelModal({ eventTitle, daysLeft, refundPercent, onConfirm }) {
 
   const confirmBtn = document.createElement("button");
   confirmBtn.className = "btn-danger text-sm";
-  confirmBtn.textContent = "確定申請取消";
+  confirmBtn.textContent = "送出取消申請";
   confirmBtn.addEventListener("click", async () => {
     confirmBtn.disabled = true;
     confirmBtn.textContent = "處理中...";
     try {
       await onConfirm();
       overlay.remove();
+      alert("已送出取消申請，主辦方審核前活動仍會照常進行、尚未退費，請留意「我的票券」的狀態更新。");
     } catch (e) {
-      alert("取消失敗：" + e.message);
+      alert("送出失敗：" + e.message);
       confirmBtn.disabled = false;
-      confirmBtn.textContent = "確定申請取消";
+      confirmBtn.textContent = "送出取消申請";
     }
   });
 
@@ -161,7 +163,7 @@ export function renderTickets(container) {
           daysLeft,
           refundPercent,
           onConfirm: async () => {
-            await cancelTicket(ticket.id);
+            await requestCancellation(ticket.id);
             render(user);
           },
         });
@@ -183,6 +185,17 @@ export function renderTickets(container) {
     }
 
     const pay = paymentStatusLabel(t.paymentStatus);
+    const cancelPending = t.cancelRequestStatus === "pending";
+
+    let actionHtml;
+    if (t.isCheckedIn) {
+      actionHtml = `<a href="#/review?eventId=${t.eventId}" class="inline-block mt-3 text-sm text-emerald-600 underline">填寫活動評價</a>`;
+    } else if (cancelPending) {
+      actionHtml = `<p class="text-sm text-yellow-700 mt-3">取消申請審核中，主辦方確認前活動仍照常進行，尚未退費。</p>`;
+    } else {
+      actionHtml = `<button data-cancel-id="${t.id}" class="btn-cancel-ticket inline-block mt-3 text-sm text-red-600 underline">申請取消報名</button>`;
+    }
+
     return `
       <div class="bg-white rounded-xl shadow p-5 flex flex-col md:flex-row gap-4 items-start">
         <div id="qr-${t.id}" class="shrink-0"></div>
@@ -194,13 +207,10 @@ export function renderTickets(container) {
             <span class="badge ${t.isCheckedIn ? "badge-blue" : "badge-gray"}">
               ${t.isCheckedIn ? "已報到" : "尚未報到"}
             </span>
+            ${cancelPending ? `<span class="badge badge-yellow">取消審核中</span>` : ""}
           </div>
-          ${paymentSectionHtml(t)}
-          ${
-            t.isCheckedIn
-              ? `<a href="#/review?eventId=${t.eventId}" class="inline-block mt-3 text-sm text-emerald-600 underline">填寫活動評價</a>`
-              : `<button data-cancel-id="${t.id}" class="btn-cancel-ticket inline-block mt-3 text-sm text-red-600 underline">申請取消報名</button>`
-          }
+          ${cancelPending ? "" : paymentSectionHtml(t)}
+          ${actionHtml}
         </div>
       </div>`;
   }
@@ -226,7 +236,7 @@ export function renderTickets(container) {
           <p class="text-sm text-gray-500">${user.email || ""}</p>
         </div>
       </div>
-      <div class="grid grid-cols-3 gap-3 mt-4 text-center">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 text-center">
         <div class="bg-white rounded-lg shadow p-3">
           <p class="text-2xl font-bold text-emerald-600">${stats.total}</p>
           <p class="text-xs text-gray-500">總報名次數</p>
@@ -234,6 +244,10 @@ export function renderTickets(container) {
         <div class="bg-white rounded-lg shadow p-3">
           <p class="text-2xl font-bold text-emerald-600">${stats.attended}</p>
           <p class="text-xs text-gray-500">實際出席次數</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-3">
+          <p class="text-2xl font-bold text-emerald-600">${stats.cancelled}</p>
+          <p class="text-xs text-gray-500">取消次數</p>
         </div>
         <div class="bg-white rounded-lg shadow p-3">
           <p class="text-2xl font-bold text-emerald-600">${stats.rate}%</p>

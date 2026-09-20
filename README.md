@@ -8,10 +8,10 @@
 - **活動瀏覽與報名**：首頁列出所有活動，登入後可直接報名，系統會檢查名額上限並記錄繳費狀態（未繳費／已繳費）。
 - **我的票券 + QR Code**：報名成功後在「我的票券」頁面看到專屬 QR Code（內含 Ticket ID 與安全驗證碼）。
 - **現場報到掃描**：主辦方在「報到管理」頁面用手機鏡頭掃描參加者的 QR Code，系統驗證後自動把該筆票券標記為已報到。
-- **主辦專區**：主辦方核對匯款後，在「主辦專區」把待確認的繳費標記為已繳費。
-- **評價與出席率**：活動報到後即可填寫星級評價與文字回饋；個人中心會顯示總報名次數、實際出席次數與出席率。
+- **主辦專區**：活動新增/編輯/刪除、核對匯款、審核取消申請、會員總覽都在這一頁。
+- **評價與出席率**：活動報到後即可填寫星級評價與文字回饋；個人中心會顯示總報名次數、實際出席次數、取消次數與出席率。
 - **新手教學**：第一次造訪網站會彈出引導視窗，帶去「新手教學」頁面說明整個使用流程。
-- **取消報名**：報名成功後直接跳到「我的票券」引導完成繳費；還沒報到的票券可以在「我的票券」申請取消，取消前會顯示退款須知，依距離活動天數計算退款比例。
+- **取消報名（需主辦方審核）**：報名成功後直接跳到「我的票券」引導完成繳費；還沒報到的票券可以在「我的票券」申請取消，取消前會顯示退款須知並依距離活動天數試算退款比例，送出後進入「審核中」，要主辦方在「主辦專區」核准才會真的取消、退還名額；駁回的話活動照常進行、不退費。
 
 ## 架構
 
@@ -41,9 +41,9 @@ firestore.rules           Firestore 安全性規則
 
 | Collection | 欄位 |
 | --- | --- |
-| `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, createdAt |
+| `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, cancelledEvents, createdAt |
 | `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), currentCount (number) |
-| `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, securityCode, createdAt |
+| `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, cancelRequestStatus ("pending"/"approved"/null), cancelRequestedAt, cancelRefundPercent, securityCode, createdAt |
 | `reviews/{reviewId}` | userId, eventId, rating (1-5), comment, createdAt |
 | `admins/{uid}` | 只要文件存在即代表該使用者是主辦方（可放任意欄位，例如 `{ addedAt: ... }`） |
 
@@ -59,7 +59,13 @@ firestore.rules           Firestore 安全性規則
 
 ## 取消與退款政策
 
-票券 ID 是固定的「活動ID_使用者ID」，取消不會刪除文件，只會標記 `isCancelled: true` 並記錄 `cancelledAt`、`refundPercent`，同時把該活動的 `currentCount` -1 讓名額釋出；之後同一個人要重新報名同一場活動，系統會把這份文件重置成剛報名的狀態。已經報到（`isCheckedIn: true`）的票券不能取消。
+取消是「申請 → 主辦方審核」兩階段，不是使用者按了就直接生效：
+
+1. 使用者在「我的票券」按「申請取消報名」，系統依當下距離活動的天數算出退款比例，寫入 `cancelRequestStatus: 'pending'`、`cancelRequestedAt`、`cancelRefundPercent`。這個階段活動照常進行、名額沒有釋出、也還沒退費，票券顯示「取消審核中」。
+2. 主辦方在「主辦專區」的「取消申請」看到這筆，可以「核准取消」或「駁回申請」：
+   - **核准**：票券標記 `isCancelled: true`、`cancelledAt`、`refundPercent`（用申請當下算好的 `cancelRefundPercent`，不會因為主辦方拖延審核而變少），該活動 `currentCount` -1 讓名額釋出給別人，該使用者的 `cancelledEvents` +1。
+   - **駁回**：把 `cancelRequestStatus` 等欄位清空，票券恢復正常，使用者之後可以再重新申請。
+3. 票券 ID 是固定的「活動ID_使用者ID」，真正取消後不會刪除文件；同一個人要重新報名同一場已取消的活動，系統會把這份文件整個重置成剛報名的狀態。已經報到（`isCheckedIn: true`）的票券不能申請取消。
 
 退款比例（`js/events.js` 的 `calcRefundPercent`，只有這裡一份，其他地方不要重複寫判斷）：
 
@@ -68,6 +74,10 @@ firestore.rules           Firestore 安全性規則
 - 距離活動開始 < 3 天：不退款
 
 實際退款一樣是主辦方手動轉帳處理（系統不會自動退款），只是先幫忙算好比例、留下紀錄。
+
+## 主辦專區的會員總覽
+
+「主辦專區」的「會員總覽」會列出所有會員的姓名、Email、報名次數、出席次數、取消次數與出席率（`js/tickets.js` 的 `listAllUsers`），作為活動成效與會員經營的參考依據。
 
 ## Firebase 後台設定步驟
 

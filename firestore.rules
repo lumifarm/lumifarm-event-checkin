@@ -59,20 +59,27 @@ service cloud.firestore {
       allow update: if isAdmin() ||
         // 本人回報已完成匯款，待主辦方對帳；不能直接改成 paid，
         // 也不能對一張已取消的票券這樣做。
-        (ticketOwnedByCaller() && resource.data.isCancelled != true &&
+        // 用 .get('isCancelled', false) 而不是直接 .isCancelled：
+        // 這個欄位是後來才加的，舊票券文件可能根本沒有這個欄位，
+        // 直接讀不存在的欄位在規則裡會直接判定失敗（跟讀不存在文件的
+        // resource 一樣），要給預設值才能同時相容新舊票券。
+        (ticketOwnedByCaller() && resource.data.get('isCancelled', false) != true &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['paymentStatus', 'paymentNote', 'paymentSubmittedAt']) &&
           request.resource.data.paymentStatus == 'pending') ||
-        // 本人申請取消報名：還沒報到、還沒取消過，只能改這三個欄位，
-        // 退款比例由前端依當下日期算好寫入，Firestore 規則不驗證金額邏輯。
-        (ticketOwnedByCaller() && resource.data.isCheckedIn == false &&
-          resource.data.isCancelled != true &&
+        // 本人申請取消報名：只是送出申請、進入待審核狀態，還沒真的取消，
+        // 名額也還沒釋出——要等主辦方核准（見下面 isAdmin 的分支）才會
+        // 把 isCancelled 設成 true。還沒報到、還沒取消過、沒有正在審核中
+        // 的申請時才能送出。
+        (ticketOwnedByCaller() && resource.data.get('isCheckedIn', false) == false &&
+          resource.data.get('isCancelled', false) != true &&
+          resource.data.get('cancelRequestStatus', null) != 'pending' &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['isCancelled', 'cancelledAt', 'refundPercent']) &&
-          request.resource.data.isCancelled == true) ||
+            .hasOnly(['cancelRequestStatus', 'cancelRequestedAt', 'cancelRefundPercent']) &&
+          request.resource.data.cancelRequestStatus == 'pending') ||
         // 本人針對「先前取消過的同一張票券」重新報名：整份重置回剛報名的狀態，
         // 但活動不能被換成別的（eventId 必須不變）。
-        (ticketOwnedByCaller() && resource.data.isCancelled == true &&
+        (ticketOwnedByCaller() && resource.data.get('isCancelled', false) == true &&
           request.resource.data.userId == request.auth.uid &&
           request.resource.data.eventId == resource.data.eventId &&
           request.resource.data.isCheckedIn == false &&

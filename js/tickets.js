@@ -47,12 +47,26 @@ export function paymentStatusLabel(status) {
 
 export async function getMyStats() {
   const user = auth.currentUser;
-  if (!user) return { total: 0, attended: 0, rate: 0 };
+  if (!user) return { total: 0, attended: 0, cancelled: 0, rate: 0 };
 
   const snap = await getDoc(doc(db, "users", user.uid));
   const data = snap.data() || {};
   const total = data.totalEvents || 0;
   const attended = data.attendedEvents || 0;
+  const cancelled = data.cancelledEvents || 0;
   const rate = total > 0 ? Math.round((attended / total) * 100) : 0;
-  return { total, attended, rate };
+  return { total, attended, cancelled, rate };
+}
+
+// 給主辦專區「會員總覽」用：列出每個會員的報名/出席/取消次數與出席率
+export async function listAllUsers() {
+  const snap = await getDocs(collection(db, "users"));
+  return snap.docs.map((d) => {
+    const data = d.data();
+    const total = data.totalEvents || 0;
+    const attended = data.attendedEvents || 0;
+    const cancelled = data.cancelledEvents || 0;
+    const rate = total > 0 ? Math.round((attended / total) * 100) : 0;
+    return { id: d.id, ...data, rate, cancelled };
+  });
 }
