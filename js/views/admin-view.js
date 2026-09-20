@@ -18,6 +18,7 @@ import { listAllUsers } from "../tickets.js";
 import { buildPreEventNotice, buildGmailComposeLink } from "../notices.js";
 import { EVENT_TAGS, renderTagBadgesHtml } from "../tags.js";
 import { awardPoints, awardPointsToCheckedInParticipants, listPointsHistoryForUser } from "../workPoints.js";
+import { listEligibleForCoupons, issuePendingCoupons, DISCOUNT_PERCENT, ATTENDANCE_THRESHOLD } from "../discounts.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -48,7 +49,11 @@ function renderPaymentRow(p, onDone) {
 
   const detail = document.createElement("p");
   detail.className = "text-sm text-gray-500";
-  detail.textContent = `金額：NT$${p.event?.price || 0}`;
+  const price = p.event?.price || 0;
+  const finalPrice = p.discountApplied ? Math.round(price * (1 - DISCOUNT_PERCENT / 100)) : price;
+  detail.textContent = p.discountApplied
+    ? `金額：NT$${finalPrice}（已套用出席折扣券，原價 NT$${price}）`
+    : `金額：NT$${finalPrice}`;
 
   const note = document.createElement("p");
   note.className = "text-sm font-bold text-emerald-700";
@@ -92,6 +97,7 @@ export function renderAdmin(container) {
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="notice-section">行前通知</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="insurance-section">投保名單</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="work-points-section">換工點數</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="discount-section">出席折扣券</button>
         </nav>
 
         <section id="event-form-section">
@@ -291,6 +297,22 @@ export function renderAdmin(container) {
           <div class="mt-4">
             <h3 class="text-sm font-bold text-gray-600 mb-2">該會員的點數紀錄</h3>
             <div id="wp-history" class="bg-white rounded-xl shadow divide-y"></div>
+          </div>
+        </section>
+
+        <section id="discount-section">
+          <h2 class="text-lg font-bold text-gray-800 mb-3">出席折扣券</h2>
+          <p class="text-xs text-gray-500 mb-3">
+            一般活動（不含換工活動）每累積出席滿 ${ATTENDANCE_THRESHOLD} 次，就可以核發一張 ${
+    100 - DISCOUNT_PERCENT
+  } 折優惠券。券會在會員下次報名付費活動時自動套用、用掉就沒了，不能跟其他優惠併用。
+          </p>
+          <div id="discount-eligible-list" class="bg-white rounded-xl shadow divide-y mb-3"></div>
+          <div class="flex gap-3">
+            <button type="button" id="discount-refresh" class="text-sm text-gray-500 underline">重新整理名單</button>
+            <button type="button" id="discount-issue-btn" class="btn-primary text-sm" disabled>
+              核發折扣券給以上名單
+            </button>
           </div>
         </section>
       </div>
@@ -924,6 +946,55 @@ export function renderAdmin(container) {
     }
   });
 
+  const discountListEl = container.querySelector("#discount-eligible-list");
+  const discountRefreshBtn = container.querySelector("#discount-refresh");
+  const discountIssueBtn = container.querySelector("#discount-issue-btn");
+
+  async function renderDiscountEligible() {
+    discountListEl.innerHTML = `<p class="text-sm text-gray-500 p-4">載入中...</p>`;
+    const eligible = await listEligibleForCoupons();
+
+    if (eligible.length === 0) {
+      discountListEl.innerHTML = `<p class="text-sm text-gray-500 p-4">目前沒有人達到新的門檻</p>`;
+      discountIssueBtn.disabled = true;
+      return;
+    }
+
+    discountListEl.innerHTML = "";
+    eligible.forEach((u) => {
+      const row = document.createElement("div");
+      row.className = "p-3 flex items-center justify-between gap-3 text-sm";
+
+      const info = document.createElement("span");
+      info.textContent = `${u.name || "（未命名）"}（${u.email || ""}）· 出席 ${u.regularAttendedCount} 次`;
+
+      const badge = document.createElement("span");
+      badge.className = "badge badge-green shrink-0";
+      badge.textContent = `可核發 ${u.pending} 張`;
+
+      row.append(info, badge);
+      discountListEl.appendChild(row);
+    });
+    discountIssueBtn.disabled = false;
+  }
+
+  discountRefreshBtn.addEventListener("click", renderDiscountEligible);
+
+  discountIssueBtn.addEventListener("click", async () => {
+    discountIssueBtn.disabled = true;
+    discountIssueBtn.textContent = "發放中...";
+    try {
+      const { issuedCount, memberCount } = await issuePendingCoupons();
+      alert(issuedCount > 0 ? `已發放 ${issuedCount} 張折扣券給 ${memberCount} 位會員。` : "目前沒有人達到新的門檻。");
+      await renderDiscountEligible();
+    } catch (err) {
+      alert("發放失敗：" + err.message);
+      discountIssueBtn.disabled = false;
+    } finally {
+      discountIssueBtn.textContent = "核發折扣券給以上名單";
+    }
+  });
+
   const unsubscribe = onAuthStateChanged(auth, async (user) => {
     if (!user) {
       adminGate.textContent = "請先登入。";
@@ -950,6 +1021,7 @@ export function renderAdmin(container) {
     populateInsuranceEventSelect();
     populateWorkPointsForm();
     populateWpBulkEventSelect();
+    renderDiscountEligible();
   });
 
   return () => unsubscribe();

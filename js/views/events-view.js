@@ -4,6 +4,7 @@ import { listEvents, registerForEvent, getMyTicketForEvent, ProfileIncompleteErr
 import { paymentStatusLabel } from "../tickets.js";
 import { renderTagBadgesHtml, EVENT_TAGS } from "../tags.js";
 import { getMyProfile, isProfileComplete } from "../profile.js";
+import { getMyCoupons } from "../discounts.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -23,6 +24,7 @@ export function renderEvents(container) {
       <div id="profile-incomplete-banner" class="hidden bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-lg p-3 mb-4">
         活動需要幫參加者投保，報名前請先<a href="#/profile" class="underline font-bold">到「資料維護」填寫真實姓名、身分證字號、出生年月日</a>。
       </div>
+      <div id="coupon-banner" class="hidden bg-lime-50 border border-lime-300 text-lime-800 text-sm rounded-lg p-3 mb-4"></div>
       <div id="tag-filter" class="flex flex-wrap gap-2 mb-4"></div>
       <div id="event-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 
@@ -35,6 +37,7 @@ export function renderEvents(container) {
   const pastHeadingEl = container.querySelector("#past-events-heading");
   const tagFilterEl = container.querySelector("#tag-filter");
   const profileBannerEl = container.querySelector("#profile-incomplete-banner");
+  const couponBannerEl = container.querySelector("#coupon-banner");
 
   // 快取最近一次抓到的資料，切換標籤篩選時只需要重新畫面，不用重新打 Firestore。
   let cachedEvents = [];
@@ -198,8 +201,16 @@ export function renderEvents(container) {
       }
       const profile = await getMyProfile();
       profileBannerEl.classList.toggle("hidden", isProfileComplete(profile));
+
+      const coupons = await getMyCoupons();
+      const unusedCount = coupons.filter((c) => c.status === "unused").length;
+      couponBannerEl.classList.toggle("hidden", unusedCount === 0);
+      if (unusedCount > 0) {
+        couponBannerEl.textContent = `你有 ${unusedCount} 張出席折扣券，下次報名付費活動會自動折抵 95 折，不用另外操作。`;
+      }
     } else {
       profileBannerEl.classList.add("hidden");
+      couponBannerEl.classList.add("hidden");
     }
 
     cachedEvents = events;

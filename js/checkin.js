@@ -43,8 +43,14 @@ export async function processScannedTicket(decodedText) {
   }
 
   const userRef = doc(db, "users", ticket.userId);
-  const userSnap = await getDoc(userRef);
+  const eventRef = doc(db, "events", ticket.eventId);
+  const [userSnap, eventSnap] = await Promise.all([getDoc(userRef), getDoc(eventRef)]);
   const userName = userSnap.exists() ? userSnap.data().name : "未知使用者";
+
+  // 換工活動已經有自己的一套點數，出席折扣券只算「一般活動」的出席次數，
+  // 避免同一次出席同時算進兩套獎勵。
+  const eventTags = (eventSnap.exists() && eventSnap.data().tags) || [];
+  const isLaborExchange = eventTags.includes("labor-exchange");
 
   // 用 batch 把「標記已報到」與「出席次數 +1」包成同一次原子寫入，
   // 避免其中一個成功、另一個因網路問題失敗，導致資料不一致。
@@ -55,6 +61,7 @@ export async function processScannedTicket(decodedText) {
   });
   batch.update(userRef, {
     attendedEvents: increment(1),
+    ...(isLaborExchange ? {} : { regularAttendedCount: increment(1) }),
   });
   await batch.commit();
 

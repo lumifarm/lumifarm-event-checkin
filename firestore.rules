@@ -24,6 +24,13 @@ service cloud.firestore {
         u.get('nationalId', '') != '' &&
         u.get('birthDate', '') != '';
     }
+    // 報名時如果宣稱套用了折扣券，必須真的是自己名下、還沒用過的那張，
+    // 不能亂填一個 couponId 就折抵，用法跟免費活動的價格檢查一樣是用
+    // get() 讀真正的資料做確認，不能只信任前端送來的 discountApplied。
+    function usesValidUnusedCoupon(couponId) {
+      let c = get(/databases/$(database)/documents/discountCoupons/$(couponId)).data;
+      return c.userId == request.auth.uid && c.status == 'unused';
+    }
 
     // 主辦方名單：手動在 Firebase Console 建立文件，文件 ID = 使用者的 uid
     match /admins/{adminId} {
@@ -68,6 +75,8 @@ service cloud.firestore {
         request.resource.data.isCheckedIn == false &&
         request.resource.data.isCancelled == false &&
         hasCompleteProfile(request.auth.uid) &&
+        (request.resource.data.get('discountApplied', false) == false ||
+          usesValidUnusedCoupon(request.resource.data.couponId)) &&
         (
           request.resource.data.paymentStatus == 'unpaid' ||
           (request.resource.data.paymentStatus == 'paid' &&
@@ -104,12 +113,28 @@ service cloud.firestore {
           request.resource.data.isCheckedIn == false &&
           request.resource.data.isCancelled == false &&
           hasCompleteProfile(request.auth.uid) &&
+          (request.resource.data.get('discountApplied', false) == false ||
+            usesValidUnusedCoupon(request.resource.data.couponId)) &&
           (
             request.resource.data.paymentStatus == 'unpaid' ||
             (request.resource.data.paymentStatus == 'paid' &&
               get(/databases/$(database)/documents/events/$(request.resource.data.eventId)).data.get('price', 0) == 0)
           ));
 
+      allow delete: if false;
+    }
+
+    // 出席折扣券：本人與主辦方可讀自己的那幾張；只有主辦方能發放；本人
+    // 報名付費活動時可以把自己「未使用」的那張改成「已使用」（同一次
+    // 只能改這三個欄位），其餘異動只有主辦方能做。
+    match /discountCoupons/{couponId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isAdmin() ||
+        (isSignedIn() && resource.data.userId == request.auth.uid &&
+          resource.data.status == 'unused' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'usedAt', 'usedTicketId']) &&
+          request.resource.data.status == 'used');
       allow delete: if false;
     }
 

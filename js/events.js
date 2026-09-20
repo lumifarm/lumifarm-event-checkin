@@ -162,6 +162,14 @@ export async function registerForEvent(eventId) {
   const userRef = doc(db, "users", user.uid);
   const securityCode = randomSecurityCode();
 
+  // Firestore transaction 只能對已知的文件參照用 tx.get，不支援查詢，
+  // 所以候選的折扣券要先在 transaction 外面查出來；進 transaction 後
+  // 再用 tx.get 重新確認狀態還是「未使用」才真的套用並標記用掉，避免
+  // 兩個分頁/裝置同時搶用同一張券。
+  const couponSnap = await getDocs(query(collection(db, "discountCoupons"), where("userId", "==", user.uid)));
+  const unusedCoupon = couponSnap.docs.find((d) => d.data().status === "unused");
+  const couponRef = unusedCoupon ? doc(db, "discountCoupons", unusedCoupon.id) : null;
+
   await runTransaction(db, async (tx) => {
     const eventSnap = await tx.get(eventRef);
     if (!eventSnap.exists()) throw new Error("活動不存在");
@@ -186,6 +194,11 @@ export async function registerForEvent(eventId) {
     // 不需要使用者再多做一次匯款通知的動作。
     const isFree = !event.price || event.price <= 0;
 
+    // 折扣券只在付費活動才有意義，免費活動不消耗掉會員手上的券，留給
+    // 之後真的要付費的活動用。
+    const couponDoc = couponRef && !isFree ? await tx.get(couponRef) : null;
+    const applyDiscount = Boolean(couponDoc && couponDoc.exists() && couponDoc.data().status === "unused");
+
     tx.set(ticketRef, {
       ticketId: ticketRef.id,
       userId: user.uid,
@@ -200,10 +213,15 @@ export async function registerForEvent(eventId) {
       cancelRequestedAt: null,
       cancelRefundPercent: null,
       securityCode,
+      discountApplied: applyDiscount,
+      couponId: applyDiscount ? couponRef.id : null,
       createdAt: serverTimestamp(),
     });
     tx.update(eventRef, { currentCount: increment(1) });
     tx.update(userRef, { totalEvents: increment(1) });
+    if (applyDiscount) {
+      tx.update(couponRef, { status: "used", usedAt: serverTimestamp(), usedTicketId: ticketRef.id });
+    }
   });
 
   return ticketRef.id;

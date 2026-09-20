@@ -20,6 +20,7 @@
 - **FAQ／常見問題頁面**：`#/faq`，整理登入、繳費、取消、報到、評價等常見問題的問答，導覽列有「常見問題」連結。
 - **投保個資（資料維護）**：活動需要幫參加者投保，點右上角自己的頭像/名稱會出現「資料維護」選項（`#/profile`），可以填寫並隨時修改真實姓名、身分證字號、出生年月日。這三個欄位沒填齊之前無法報名任何活動，報名按鈕會被 Firestore 規則擋下來並引導去補資料；主辦專區也能匯出某活動的投保名單（詳見下方「投保個資與投保名單」）。
 - **換工點數**：活動標籤多一個「換工活動」，代表農務協助（拔草、澆水、種植等）。主辦專區可以針對某場換工活動「一鍵發放」點數給所有已報到的會員，不需要會員另外上傳照片，詳見下方「換工點數」一節。
+- **出席折扣券**：一般活動（不含換工活動）累積出席滿一定次數，系統自動核發一張折扣券，下次報名付費活動自動套用、不能跟其他優惠併用，詳見下方「出席折扣券」一節。
 
 ## 架構
 
@@ -45,6 +46,7 @@ js/notices.js             行前通知的郵件內容組裝（Gmail 網頁版寫
 js/tags.js                活動標籤分類清單（顏色、圖示）
 js/profile.js             投保個資（真實姓名/身分證字號/出生年月日）的讀取、驗證、更新
 js/workPoints.js          換工點數的讀取、發放/扣點、歷史紀錄
+js/discounts.js           出席折扣券的門檻計算、核發、讀取
 js/views/*.js             各路由畫面：把 HTML 畫進傳入的容器、回傳 cleanup 函式
 js/views/faq-view.js      常見問題頁面（純靜態問答內容）
 js/views/profile-view.js  資料維護頁面（#/profile）
@@ -55,11 +57,12 @@ firestore.rules           Firestore 安全性規則
 
 | Collection | 欄位 |
 | --- | --- |
-| `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, cancelledEvents, createdAt, realName（真實姓名，可省略表示未填）, nationalId（身分證字號，可省略表示未填）, birthDate（出生年月日字串 YYYY-MM-DD，可省略表示未填）, workPoints（換工點數餘額，number，可省略表示 0，只有主辦方能寫） |
+| `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, cancelledEvents, createdAt, realName（真實姓名，可省略表示未填）, nationalId（身分證字號，可省略表示未填）, birthDate（出生年月日字串 YYYY-MM-DD，可省略表示未填）, workPoints（換工點數餘額，number，可省略表示 0，只有主辦方能寫）, regularAttendedCount（number，可省略表示 0，只算「非換工活動」的出席次數，用來算折扣券門檻，只有主辦方能寫） |
 | `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), currentCount (number), posterUrl (string, 可省略), tags (string[], 值對應 `js/tags.js` 的 `EVENT_TAGS` id) |
-| `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, cancelRequestStatus ("pending"/"approved"/null), cancelRequestedAt, cancelRefundPercent, securityCode, createdAt, workPointsAwarded（bool，可省略，這張票券是否已經因為某場換工活動被一鍵發放過點數，避免重複發放） |
+| `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, cancelRequestStatus ("pending"/"approved"/null), cancelRequestedAt, cancelRefundPercent, securityCode, createdAt, workPointsAwarded（bool，可省略，這張票券是否已經因為某場換工活動被一鍵發放過點數，避免重複發放）, discountApplied（bool，可省略，這張票券報名當下是否套用了出席折扣券）, couponId（string，可省略，套用的那張折扣券 id） |
 | `reviews/{reviewId}` | userId, eventId, rating (1-5), comment, createdAt |
 | `workPointTransactions/{txId}` | userId, points（number，正數＝發放、負數＝兌換扣點）, reason（string，說明文字）, eventId（可省略）, createdAt, createdBy（登記的主辦方 uid） |
+| `discountCoupons/{couponId}` | userId, discountPercent（number，目前固定 5，代表 95 折）, status ("unused"/"used"), createdAt, createdBy（核發的主辦方 uid）, usedAt（可省略）, usedTicketId（可省略，用在哪張票券上） |
 | `admins/{uid}` | 只要文件存在即代表該使用者是主辦方（可放任意欄位，例如 `{ addedAt: ... }`） |
 
 ## 繳費流程
@@ -99,6 +102,17 @@ firestore.rules           Firestore 安全性規則
 7. **權限**：`workPoints` 沒有列在會員自己能更新的欄位清單裡，一般會員完全無法自己改點數，只有主辦方（`isAdmin()`）能寫；`workPointTransactions` 也只有主辦方能新增，一般人只能讀自己的那幾筆，而且規則禁止修改/刪除既有紀錄——要更正的話用再登記一筆補償紀錄，保留完整歷史軌跡。
 
 如果之後真的想做「照片佐證＋依個人表現分級給點」，可以考慮升級 Blaze 方案啟用 Cloud Storage（以每月一場、10~20 人上傳手機照片的規模估算，實際費用預期是 NT$0，因為用量遠低於免費額度，但需要先綁信用卡並承擔意外爆量的風險，建議另外設定 Firebase 的 Budget Alert）；目前先用「報到即可一鍵發放」這個不用花錢、也更省事的作法。
+
+## 出席折扣券
+
+跟換工點數分開的另一套獎勵：鼓勵會員持續參加一般活動（工作坊等），不牽涉「拿勞力換點數」的性質，所以特意不跟換工點數混在一起算，避免點數意義混淆、也避免發太快稀釋掉折扣的價值。
+
+- **門檻與折扣**：`js/discounts.js` 定義 `ATTENDANCE_THRESHOLD = 5`（次）、`DISCOUNT_PERCENT = 5`（折抵 5%，也就是 95 折），要調整這兩個數字改這裡就好。一般活動（`tags` 不含 `labor-exchange`）每累積出席滿 5 次就核發一張券，之後每再滿 5 次（10、15...）再核發一張，用循環制。
+- **只算「一般活動」的出席**：`js/checkin.js` 報到時，會檢查該活動有沒有「換工活動」標籤，只有沒有的才會把 `users/{uid}.regularAttendedCount` +1（換工活動照樣會讓原本的 `attendedEvents` 總數 +1，但不算進折扣券的門檻，因為那類活動已經有換工點數）。
+- **主辦方核發**：「主辦專區」的「出席折扣券」區塊會自動列出「目前有幾張還沒發」的會員名單（用 `regularAttendedCount / 5` 減掉已經發過的張數算出來），按「核發折扣券給以上名單」一次全部發出去，不用一個一個手動選會員。
+- **自動套用，不用會員操作**：會員報名付費活動時，`registerForEvent` 會自動檢查名下有沒有「未使用」的折扣券，有的話直接套用 95 折、把票券標記 `discountApplied: true` 並把那張券標記為已使用；免費活動不會消耗掉券（折扣沒有意義）。折扣是自動套用、不是會員可以選擇要不要用的選項，這樣不用另外做一個「使用折扣券」的介面。
+- **顯示**：「活動列表」跟「我的票券」都會顯示目前有幾張可用的折扣券；套用折扣後的票券在「應繳金額」會直接顯示折扣後的金額，主辦方在「主辦專區」的「待確認繳費」清單也會看到「已套用出席折扣券，原價 NT$xxx」的備註，避免核對金額時搞錯。
+- **權限**：折扣的百分比是固定寫在前端常數裡、不是存在票券上可以被竄改的欄位；`tickets` 的建立/重新報名規則會用 `get()` 確認 `couponId` 指到的那張券真的是本人名下、狀態還是「未使用」，不能亂填一個 couponId 就折抵。`discountCoupons` 只有主辦方能核發，會員只能把自己「未使用」的那張改成「已使用」（報名時系統自動做），其餘異動只有主辦方能做。
 
 ## 活動海報圖片
 
@@ -186,6 +200,7 @@ npx serve .
 - QR Code 內容包含 `ticketId` 與隨機產生的 `securityCode`，報到掃描時會比對 Firestore 內存的驗證碼，避免有人自行編造 QR Code 內容混入報到。
 - 報名（`tickets` 的 create，以及取消後重新報名的 update 分支）都會用 `hasCompleteProfile()` 讀本人 `users/{uid}` 的 `realName`／`nationalId`／`birthDate`，沒填齊就擋下來，前端沒攔到的話規則這邊會是最後一關。
 - `users/{uid}.workPoints`（換工點數餘額）不在會員自己能更新的欄位清單裡，只有主辦方能改；`workPointTransactions` 只有主辦方能新增、任何人都不能修改或刪除既有紀錄，確保點數異動有完整、不可竄改的歷史軌跡。
+- 折扣券套用用 `usesValidUnusedCoupon()` 讀真正的 `discountCoupons` 文件確認 `userId` 跟 `status` 都對得上，不能只信任前端送來的 `discountApplied`；`discountCoupons` 本身只有主辦方能建立，會員只能把自己名下「未使用」的那張改成「已使用」（且只能改 `status`／`usedAt`／`usedTicketId` 這三個欄位），其餘一律只有主辦方能動。
 
 ## 可能的後續擴充（非本版本範圍）
 

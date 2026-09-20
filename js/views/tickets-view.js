@@ -4,6 +4,7 @@ import { getMyTickets, renderTicketQRCode, getMyStats, paymentStatusLabel } from
 import { BANK_INFO, submitPaymentNotice } from "../payment.js";
 import { requestCancellation, calcRefundPercent } from "../events.js";
 import { getMyPointsBalance, getMyPointsHistory } from "../workPoints.js";
+import { getMyCoupons, DISCOUNT_PERCENT } from "../discounts.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -17,13 +18,27 @@ function eventDateOf(t) {
   return raw.toDate ? raw.toDate() : new Date(raw);
 }
 
+// 折扣是報名當下自動套用、存在票券的 discountApplied 上，這裡只根據
+// 那個結果重算金額給使用者看，折扣百分比不會另外存在票券裡（目前全站
+// 只有一種折扣），跟 discounts.js 的常數保持同一份。
+function finalPriceOf(t) {
+  const price = t.event?.price || 0;
+  if (!t.discountApplied) return price;
+  return Math.round(price * (1 - DISCOUNT_PERCENT / 100));
+}
+
 function paymentSectionHtml(t) {
   if (t.paymentStatus === "unpaid") {
     return `
       <div class="mt-3 border-t pt-3 text-sm text-gray-700">
         <p class="text-xs text-gray-500 mb-1">匯款資訊</p>
         <p>${BANK_INFO.bankName}　帳號：${BANK_INFO.account}　戶名：${BANK_INFO.accountName}</p>
-        <p class="mt-1">應繳金額：NT$${t.event?.price || 0}</p>
+        ${
+          t.discountApplied
+            ? `<p class="mt-1 text-lime-700">已套用出席折扣券（${100 - DISCOUNT_PERCENT}折）</p>`
+            : ""
+        }
+        <p class="mt-1">應繳金額：NT$${finalPriceOf(t)}</p>
         <input
           type="text"
           id="note-${t.id}"
@@ -240,11 +255,13 @@ export function renderTickets(container) {
     profileSection.classList.remove("hidden");
     ticketList.classList.remove("hidden");
 
-    const [stats, pointsBalance, pointsHistory] = await Promise.all([
+    const [stats, pointsBalance, pointsHistory, coupons] = await Promise.all([
       getMyStats(),
       getMyPointsBalance(),
       getMyPointsHistory(),
+      getMyCoupons(),
     ]);
+    const unusedCouponCount = coupons.filter((c) => c.status === "unused").length;
     const pointsHistoryHtml =
       pointsHistory.length > 0
         ? pointsHistory
@@ -268,7 +285,7 @@ export function renderTickets(container) {
           <p class="text-sm text-gray-500">${user.email || ""}</p>
         </div>
       </div>
-      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-4 text-center">
+      <div class="grid grid-cols-2 sm:grid-cols-6 gap-3 mt-4 text-center">
         <div class="bg-white rounded-lg shadow p-3">
           <p class="text-2xl font-bold text-emerald-600">${stats.total}</p>
           <p class="text-xs text-gray-500">總報名次數</p>
@@ -289,7 +306,16 @@ export function renderTickets(container) {
           <p class="text-2xl font-bold text-lime-700">${pointsBalance}</p>
           <p class="text-xs text-gray-500">換工點數</p>
         </div>
+        <div class="bg-white rounded-lg shadow p-3">
+          <p class="text-2xl font-bold text-amber-600">${unusedCouponCount}</p>
+          <p class="text-xs text-gray-500">可用折扣券</p>
+        </div>
       </div>
+      ${
+        unusedCouponCount > 0
+          ? `<p class="text-xs text-gray-500 mt-2">下次報名付費活動會自動套用一張折扣券，不用另外操作；不能跟其他優惠併用。</p>`
+          : ""
+      }
       <details class="mt-2">
         <summary class="text-sm text-gray-500 cursor-pointer">換工點數紀錄</summary>
         <ul class="text-sm mt-2 bg-white rounded-lg shadow p-3 divide-y">${pointsHistoryHtml}</ul>
