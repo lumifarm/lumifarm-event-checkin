@@ -29,9 +29,13 @@ export async function ensureUserDoc(user) {
   return ref;
 }
 
+// 不在這裡呼叫 ensureUserDoc：watchAuthState 掛在每個頁面上，登入成功時
+// 一定也會收到這次的狀態變化並自己建立會員資料。若這裡再呼叫一次，
+// 使用者第一次登入時兩個呼叫會同時讀到「文件不存在」而各自嘗試建立，
+// 其中較慢的那個會被 Firestore 規則當成「更新」而不是「建立」擋下來
+// （因為 createdAt 不在允許更新的欄位清單內），跳出無意義的錯誤訊息。
 export async function loginWithGoogle() {
   const result = await signInWithPopup(auth, googleProvider);
-  await ensureUserDoc(result.user);
   return result.user;
 }
 
