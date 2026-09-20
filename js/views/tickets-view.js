@@ -113,10 +113,15 @@ export function renderTickets(container) {
       <section id="profile-section" class="hidden mb-8"></section>
       <h2 class="text-xl font-bold text-gray-800 mb-3">我的票券</h2>
       <div id="ticket-list" class="hidden space-y-4"></div>
+
+      <h2 id="ticket-history-heading" class="hidden text-xl font-bold text-gray-500 mt-10 mb-3">已結束或已取消的活動</h2>
+      <div id="ticket-history-list" class="space-y-4"></div>
     </div>`;
 
   const profileSection = container.querySelector("#profile-section");
   const ticketList = container.querySelector("#ticket-list");
+  const historyHeading = container.querySelector("#ticket-history-heading");
+  const historyList = container.querySelector("#ticket-history-list");
   const loginPrompt = container.querySelector("#login-prompt");
 
   function wirePaymentButtons(tickets, user) {
@@ -171,7 +176,7 @@ export function renderTickets(container) {
     });
   }
 
-  function ticketCardHtml(t) {
+  function ticketCardHtml(t, isPast) {
     if (t.isCancelled) {
       return `
       <div class="bg-white rounded-xl shadow p-5 opacity-75">
@@ -194,6 +199,8 @@ export function renderTickets(container) {
       actionHtml = `<a href="#/review?eventId=${t.eventId}" class="inline-block mt-3 text-sm text-emerald-600 underline">填寫活動評價</a>`;
     } else if (cancelPending) {
       actionHtml = `<p class="text-sm text-yellow-700 mt-3">取消申請審核中，主辦方確認前活動仍照常進行，尚未退費。</p>`;
+    } else if (isPast) {
+      actionHtml = `<p class="text-sm text-gray-500 mt-3">活動已結束</p>`;
     } else {
       actionHtml = `<button data-cancel-id="${t.id}" class="btn-cancel-ticket inline-block mt-3 text-sm text-red-600 underline">申請取消報名</button>`;
     }
@@ -213,7 +220,7 @@ export function renderTickets(container) {
             </span>
             ${cancelPending ? `<span class="badge badge-yellow">取消審核中</span>` : ""}
           </div>
-          ${cancelPending ? "" : paymentSectionHtml(t)}
+          ${cancelPending || isPast ? "" : paymentSectionHtml(t)}
           ${actionHtml}
         </div>
       </div>`;
@@ -262,19 +269,52 @@ export function renderTickets(container) {
     const tickets = await getMyTickets();
     if (tickets.length === 0) {
       ticketList.innerHTML = `<p class="text-gray-500 text-center py-8">尚無報名紀錄</p>`;
+      historyHeading.classList.add("hidden");
+      historyList.innerHTML = "";
       return;
     }
 
-    ticketList.innerHTML = tickets.map(ticketCardHtml).join("");
+    // 依活動日期新到舊排序，再依「是否已取消」或「活動日期已過」拆成
+    // 現有票券跟「已結束或已取消」兩區，後者獨立放在下面。
+    const now = new Date();
+    const sorted = [...tickets].sort((a, b) => {
+      const da = eventDateOf(a) || new Date(0);
+      const db = eventDateOf(b) || new Date(0);
+      return db - da;
+    });
+    const isHistory = (t) => {
+      if (t.isCancelled) return true;
+      const d = eventDateOf(t);
+      return d ? d < now : false;
+    };
+    const activeTickets = sorted.filter((t) => !isHistory(t));
+    const historyTickets = sorted.filter(isHistory);
 
-    tickets.forEach((t) => {
-      if (t.isCancelled) return;
+    ticketList.innerHTML =
+      activeTickets.length > 0
+        ? activeTickets.map((t) => ticketCardHtml(t, false)).join("")
+        : `<p class="text-gray-500 text-center py-8">目前沒有進行中的報名</p>`;
+
+    if (historyTickets.length > 0) {
+      historyHeading.classList.remove("hidden");
+      historyList.innerHTML = historyTickets.map((t) => ticketCardHtml(t, true)).join("");
+    } else {
+      historyHeading.classList.add("hidden");
+      historyList.innerHTML = "";
+    }
+
+    activeTickets.forEach((t) => {
       const el = ticketList.querySelector(`#qr-${t.id}`);
       if (el) renderTicketQRCode(el, t);
     });
+    historyTickets.forEach((t) => {
+      if (t.isCancelled) return;
+      const el = historyList.querySelector(`#qr-${t.id}`);
+      if (el) renderTicketQRCode(el, t);
+    });
 
-    wirePaymentButtons(tickets, user);
-    wireCancelButtons(tickets, user);
+    wirePaymentButtons(activeTickets, user);
+    wireCancelButtons(activeTickets, user);
   }
 
   const unsubscribe = onAuthStateChanged(auth, render);
