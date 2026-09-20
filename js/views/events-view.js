@@ -2,7 +2,7 @@ import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { listEvents, registerForEvent, getMyTicketForEvent } from "../events.js";
 import { paymentStatusLabel } from "../tickets.js";
-import { renderTagBadgesHtml } from "../tags.js";
+import { renderTagBadgesHtml, EVENT_TAGS } from "../tags.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -19,6 +19,7 @@ export function renderEvents(container) {
   container.innerHTML = `
     <div class="max-w-5xl mx-auto">
       <h1 class="text-2xl font-bold text-gray-800 my-4">近期活動</h1>
+      <div id="tag-filter" class="flex flex-wrap gap-2 mb-4"></div>
       <div id="event-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 
       <h2 id="past-events-heading" class="hidden text-xl font-bold text-gray-500 mt-10 mb-4">過往活動</h2>
@@ -28,6 +29,13 @@ export function renderEvents(container) {
   const listEl = container.querySelector("#event-list");
   const pastListEl = container.querySelector("#past-event-list");
   const pastHeadingEl = container.querySelector("#past-events-heading");
+  const tagFilterEl = container.querySelector("#tag-filter");
+
+  // 快取最近一次抓到的資料，切換標籤篩選時只需要重新畫面，不用重新打 Firestore。
+  let cachedEvents = [];
+  let cachedTickets = {};
+  let cachedUser = null;
+  let activeTag = null;
 
   function eventCardHtml(ev, ticket, user, isPast) {
     const full = ev.maxCap && (ev.currentCount || 0) >= ev.maxCap;
@@ -87,23 +95,49 @@ export function renderEvents(container) {
     });
   }
 
-  async function render() {
-    listEl.innerHTML = `<p class="text-gray-500 col-span-full text-center py-8">載入中...</p>`;
-    pastListEl.innerHTML = "";
-    pastHeadingEl.classList.add("hidden");
+  function renderTagFilter(events) {
+    // 只列出目前活動實際有用到的標籤，避免出現一按下去永遠是空清單的篩選項目。
+    const usedTagIds = new Set(events.flatMap((ev) => ev.tags || []));
+    const usableTags = EVENT_TAGS.filter((t) => usedTagIds.has(t.id));
 
-    const events = await listEvents();
-    const user = auth.currentUser;
-
-    const myTickets = {};
-    if (user) {
-      for (const ev of events) {
-        myTickets[ev.id] = await getMyTicketForEvent(user.uid, ev.id);
-      }
+    if (usableTags.length === 0) {
+      tagFilterEl.innerHTML = "";
+      return;
     }
 
+    const allBtn = `<button type="button" data-tag="" class="btn-tag-filter text-xs border rounded-full px-3 py-1 ${
+      activeTag === null ? "bg-emerald-600 text-white border-emerald-600" : "bg-white hover:bg-gray-100"
+    }">全部</button>`;
+    const tagBtns = usableTags
+      .map(
+        (t) => `
+      <button type="button" data-tag="${t.id}" class="btn-tag-filter text-xs border rounded-full px-3 py-1 ${
+          activeTag === t.id ? "bg-emerald-600 text-white border-emerald-600" : "bg-white hover:bg-gray-100"
+        }">${t.icon} ${t.label}</button>`
+      )
+      .join("");
+
+    tagFilterEl.innerHTML = allBtn + tagBtns;
+    tagFilterEl.querySelectorAll(".btn-tag-filter").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        activeTag = btn.dataset.tag || null;
+        renderList();
+      });
+    });
+  }
+
+  function renderList() {
+    const events = activeTag ? cachedEvents.filter((ev) => (ev.tags || []).includes(activeTag)) : cachedEvents;
+    const user = cachedUser;
+
+    renderTagFilter(cachedEvents);
+
     if (events.length === 0) {
-      listEl.innerHTML = `<p class="text-gray-500 col-span-full text-center py-8">目前尚無活動</p>`;
+      listEl.innerHTML = `<p class="text-gray-500 col-span-full text-center py-8">${
+        activeTag ? "這個分類目前沒有活動" : "目前尚無活動"
+      }</p>`;
+      pastListEl.innerHTML = "";
+      pastHeadingEl.classList.add("hidden");
       return;
     }
 
@@ -126,14 +160,39 @@ export function renderEvents(container) {
 
     listEl.innerHTML =
       upcoming.length > 0
-        ? upcoming.map((ev) => eventCardHtml(ev, myTickets[ev.id], user, false)).join("")
+        ? upcoming.map((ev) => eventCardHtml(ev, cachedTickets[ev.id], user, false)).join("")
         : `<p class="text-gray-500 col-span-full text-center py-8">目前尚無近期活動</p>`;
     wireRegisterButtons(listEl);
 
     if (past.length > 0) {
       pastHeadingEl.classList.remove("hidden");
-      pastListEl.innerHTML = past.map((ev) => eventCardHtml(ev, myTickets[ev.id], user, true)).join("");
+      pastListEl.innerHTML = past.map((ev) => eventCardHtml(ev, cachedTickets[ev.id], user, true)).join("");
+    } else {
+      pastHeadingEl.classList.add("hidden");
+      pastListEl.innerHTML = "";
     }
+  }
+
+  async function render() {
+    listEl.innerHTML = `<p class="text-gray-500 col-span-full text-center py-8">載入中...</p>`;
+    pastListEl.innerHTML = "";
+    pastHeadingEl.classList.add("hidden");
+
+    const events = await listEvents();
+    const user = auth.currentUser;
+
+    const myTickets = {};
+    if (user) {
+      for (const ev of events) {
+        myTickets[ev.id] = await getMyTicketForEvent(user.uid, ev.id);
+      }
+    }
+
+    cachedEvents = events;
+    cachedTickets = myTickets;
+    cachedUser = user;
+
+    renderList();
   }
 
   const unsubscribe = onAuthStateChanged(auth, () => render());

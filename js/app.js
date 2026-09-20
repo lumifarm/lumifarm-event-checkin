@@ -7,6 +7,7 @@ import { renderAdmin } from "./views/admin-view.js";
 import { renderReview } from "./views/review-view.js";
 import { renderOnboarding } from "./views/onboarding-view.js";
 import { renderEventDetail } from "./views/event-detail-view.js";
+import { renderFaq } from "./views/faq-view.js";
 
 initNavbar();
 
@@ -17,6 +18,7 @@ registerRoute("/admin", renderAdmin);
 registerRoute("/review", renderReview);
 registerRoute("/onboarding", renderOnboarding);
 registerRoute("/event", renderEventDetail);
+registerRoute("/faq", renderFaq);
 
 window.addEventListener("hashchange", renderRoute);
 renderRoute();

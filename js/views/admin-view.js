@@ -45,9 +45,13 @@ function renderPaymentRow(p, onDone) {
 
   const detail = document.createElement("p");
   detail.className = "text-sm text-gray-500";
-  detail.textContent = `金額：NT$${p.event?.price || 0}　備註：${p.paymentNote || "（無）"}`;
+  detail.textContent = `金額：NT$${p.event?.price || 0}`;
 
-  info.append(title, who, detail);
+  const note = document.createElement("p");
+  note.className = "text-sm font-bold text-emerald-700";
+  note.textContent = `匯款後五碼／備註：${p.paymentNote || "（未填寫）"}`;
+
+  info.append(title, who, detail, note);
 
   const btn = document.createElement("button");
   btn.className = "btn-primary text-sm shrink-0";

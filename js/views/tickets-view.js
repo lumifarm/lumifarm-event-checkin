@@ -1,7 +1,7 @@
 import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { getMyTickets, renderTicketQRCode, getMyStats, paymentStatusLabel } from "../tickets.js";
-import { BANK_INFO, submitPaymentNotice, buildPaymentMailto } from "../payment.js";
+import { BANK_INFO, submitPaymentNotice } from "../payment.js";
 import { requestCancellation, calcRefundPercent } from "../events.js";
 
 function formatDate(ts) {
@@ -124,11 +124,10 @@ export function renderTickets(container) {
   const historyList = container.querySelector("#ticket-history-list");
   const loginPrompt = container.querySelector("#login-prompt");
 
-  function wirePaymentButtons(tickets, user) {
+  function wirePaymentButtons(user) {
     ticketList.querySelectorAll(".btn-pay-notify").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const ticketId = btn.dataset.ticketId;
-        const ticket = tickets.find((t) => t.id === ticketId);
         const noteInput = ticketList.querySelector(`#note-${ticketId}`);
         const note = noteInput ? noteInput.value.trim() : "";
 
@@ -136,15 +135,7 @@ export function renderTickets(container) {
         btn.textContent = "處理中...";
         try {
           await submitPaymentNotice(ticketId, note);
-          alert("已記錄你的匯款通知，狀態改為「待確認中」。接下來會嘗試開啟你的信箱軟體通知主辦方，如果沒有反應也沒關係，狀態已經更新成功了。");
-          window.location.href = buildPaymentMailto({
-            userName: user.displayName || "",
-            userEmail: user.email || "",
-            eventTitle: ticket.event?.title || "",
-            ticketId,
-            amount: ticket.event?.price || 0,
-            note,
-          });
+          alert("已記錄你的匯款通知，狀態改為「待確認中」，主辦方會在主辦專區看到你填寫的後五碼並核對，不用另外寄信。");
           render(user);
         } catch (e) {
           alert("通知失敗：" + e.message);
@@ -314,7 +305,7 @@ export function renderTickets(container) {
       if (el) renderTicketQRCode(el, t);
     });
 
-    wirePaymentButtons(activeTickets, user);
+    wirePaymentButtons(user);
     wireCancelButtons(activeTickets, user);
   }
 

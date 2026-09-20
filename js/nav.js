@@ -10,6 +10,25 @@ export function initNavbar() {
   const userPhoto = document.getElementById("nav-user-photo");
   const checkinLink = document.getElementById("nav-link-checkin");
   const adminLink = document.getElementById("nav-link-admin");
+  const navToggle = document.getElementById("nav-toggle");
+  const navLinks = document.getElementById("nav-links");
+
+  // 手機版把連結收進漢堡選單裡；桌機版 Tailwind 的 sm:flex 一定會蓋掉 hidden，
+  // 所以這裡切換 hidden/flex 只影響手機版的顯示與否，桌機不受影響。
+  function closeMobileMenu() {
+    navLinks?.classList.add("hidden");
+    navLinks?.classList.remove("flex");
+    navToggle?.setAttribute("aria-expanded", "false");
+  }
+
+  navToggle?.addEventListener("click", () => {
+    const isOpen = navLinks?.classList.contains("flex");
+    navLinks?.classList.toggle("hidden", isOpen);
+    navLinks?.classList.toggle("flex", !isOpen);
+    navToggle.setAttribute("aria-expanded", String(!isOpen));
+  });
+
+  navLinks?.querySelectorAll("a").forEach((a) => a.addEventListener("click", closeMobileMenu));
 
   loginBtn?.addEventListener("click", async () => {
     try {

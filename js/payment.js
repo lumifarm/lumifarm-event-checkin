@@ -30,21 +30,6 @@ export async function submitPaymentNotice(ticketId, note) {
   });
 }
 
-export function buildPaymentMailto({ userName, userEmail, eventTitle, ticketId, amount, note }) {
-  const subject = `【繳費通知】${eventTitle} - ${userName}`;
-  const body = [
-    `活動：${eventTitle}`,
-    `報名人：${userName}（${userEmail}）`,
-    `票券 ID：${ticketId}`,
-    `應繳金額：NT$${amount}`,
-    `匯款帳號後五碼／備註：${note || "（未填寫）"}`,
-    "",
-    "請主辦方核對匯款紀錄後，至報到管理頁面將此筆標記為已繳費。",
-  ].join("\n");
-
-  return `mailto:info@lumifarm.org?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-}
-
 // 給報到管理頁面：列出所有「待確認」的繳費通知，附上活動與報名人資訊
 export async function listPendingPayments() {
   const q = query(collection(db, "tickets"), where("paymentStatus", "==", "pending"));
