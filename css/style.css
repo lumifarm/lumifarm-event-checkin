@@ -67,6 +67,10 @@
   background-color: #dbeafe;
   color: #1d4ed8;
 }
+.badge-tag-teal {
+  background-color: #ccfbf1;
+  color: #0f766e;
+}
 
 .btn-danger {
   background-color: #dc2626;
