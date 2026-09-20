@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // 主辦方名單：手動在 Firebase Console 建立文件，文件 ID = 使用者的 uid
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // 會員個資：只能看/改自己的，主辦方可讀取所有人、並可更新報到相關欄位
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      allow update: if
+        (isOwner(userId) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'email', 'photoURL', 'totalEvents'])) ||
+        isAdmin();
+    }
+
+    // 活動資訊：所有人可讀，只有主辦方可新增/刪除；報名時允許任何登入者更新名額欄位
+    match /events/{eventId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() ||
+        (isSignedIn() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentCount']));
+    }
+
+    // 報名票券：本人與主辦方可讀；本人建立自己的票券、只能改繳費狀態；報到狀態只能由主辦方更新
+    match /tickets/{ticketId} {
+      allow read: if isSignedIn() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.isCheckedIn == false &&
+        request.resource.data.paymentStatus == 'unpaid';
+
+      allow update: if isAdmin() ||
+        (isSignedIn() && resource.data.userId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus']));
+
+      allow delete: if false;
+    }
+
+    // 活動評價：所有人可讀；本人只能新增自己的評價一次，修改/刪除交由主辦方處理
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+  }
+}

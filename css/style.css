@@ -1,0 +1,61 @@
+/* 補充樣式：Tailwind Play CDN 不支援外部檔案的 @apply，所以這裡用純 CSS 撰寫 */
+
+.btn-primary {
+  background-color: #059669;
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.btn-primary:hover {
+  background-color: #047857;
+}
+
+.btn-disabled {
+  background-color: #e5e7eb;
+  color: #9ca3af;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 700;
+  border: none;
+  cursor: not-allowed;
+}
+
+.badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  display: inline-block;
+}
+.badge-green {
+  background-color: #d1fae5;
+  color: #047857;
+}
+.badge-yellow {
+  background-color: #fef9c3;
+  color: #a16207;
+}
+.badge-blue {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
+.badge-gray {
+  background-color: #f3f4f6;
+  color: #4b5563;
+}
+
+#qr-reader video,
+#qr-reader img {
+  border-radius: 0.5rem;
+}
+
+.star-btn {
+  line-height: 1;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
