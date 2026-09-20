@@ -1,8 +1,9 @@
 import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { listEvents, registerForEvent, getMyTicketForEvent } from "../events.js";
+import { listEvents, registerForEvent, getMyTicketForEvent, ProfileIncompleteError } from "../events.js";
 import { paymentStatusLabel } from "../tickets.js";
 import { renderTagBadgesHtml, EVENT_TAGS } from "../tags.js";
+import { getMyProfile, isProfileComplete } from "../profile.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -19,6 +20,9 @@ export function renderEvents(container) {
   container.innerHTML = `
     <div class="max-w-5xl mx-auto">
       <h1 class="text-2xl font-bold text-gray-800 my-4">近期活動</h1>
+      <div id="profile-incomplete-banner" class="hidden bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-lg p-3 mb-4">
+        活動需要幫參加者投保，報名前請先<a href="#/profile" class="underline font-bold">到「資料維護」填寫真實姓名、身分證字號、出生年月日</a>。
+      </div>
       <div id="tag-filter" class="flex flex-wrap gap-2 mb-4"></div>
       <div id="event-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 
@@ -30,6 +34,7 @@ export function renderEvents(container) {
   const pastListEl = container.querySelector("#past-event-list");
   const pastHeadingEl = container.querySelector("#past-events-heading");
   const tagFilterEl = container.querySelector("#tag-filter");
+  const profileBannerEl = container.querySelector("#profile-incomplete-banner");
 
   // 快取最近一次抓到的資料，切換標籤篩選時只需要重新畫面，不用重新打 Firestore。
   let cachedEvents = [];
@@ -87,6 +92,11 @@ export function renderEvents(container) {
           alert("報名成功！接下來請完成繳費。");
           location.hash = "#/tickets";
         } catch (e) {
+          if (e instanceof ProfileIncompleteError) {
+            alert(e.message);
+            location.hash = "#/profile";
+            return;
+          }
           alert("報名失敗：" + e.message);
           btn.disabled = false;
           btn.textContent = "立即報名";
@@ -186,6 +196,10 @@ export function renderEvents(container) {
       for (const ev of events) {
         myTickets[ev.id] = await getMyTicketForEvent(user.uid, ev.id);
       }
+      const profile = await getMyProfile();
+      profileBannerEl.classList.toggle("hidden", isProfileComplete(profile));
+    } else {
+      profileBannerEl.classList.add("hidden");
     }
 
     cachedEvents = events;

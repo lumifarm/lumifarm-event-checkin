@@ -12,6 +12,8 @@ export function initNavbar() {
   const adminLink = document.getElementById("nav-link-admin");
   const navToggle = document.getElementById("nav-toggle");
   const navLinks = document.getElementById("nav-links");
+  const userToggle = document.getElementById("nav-user-toggle");
+  const userMenu = document.getElementById("nav-user-menu");
 
   // 手機版把連結收進漢堡選單裡；桌機版 Tailwind 的 sm:flex 一定會蓋掉 hidden，
   // 所以這裡切換 hidden/flex 只影響手機版的顯示與否，桌機不受影響。
@@ -29,6 +31,25 @@ export function initNavbar() {
   });
 
   navLinks?.querySelectorAll("a").forEach((a) => a.addEventListener("click", closeMobileMenu));
+
+  // 帳號選單（頭像/名稱點下去出現「資料維護」「登出」）：點選單以外的地方要
+  // 自動收起，不然使用者點了活動列表之後選單還開著會很奇怪。
+  function closeUserMenu() {
+    userMenu?.classList.add("hidden");
+  }
+
+  userToggle?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    userMenu?.classList.toggle("hidden");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (userMenu && !userMenu.classList.contains("hidden") && !userMenu.contains(e.target) && e.target !== userToggle) {
+      closeUserMenu();
+    }
+  });
+
+  userMenu?.querySelectorAll("a, button").forEach((el) => el.addEventListener("click", closeUserMenu));
 
   loginBtn?.addEventListener("click", async () => {
     try {

@@ -47,6 +47,30 @@ export async function listActiveParticipantEmails(eventId) {
   return [...new Set(emails.filter(Boolean))];
 }
 
+// 給主辦專區「投保名單」用：某活動目前還算數的報名者（排除已取消）的
+// 真實姓名、身分證字號、出生年月日，供主辦方辦理活動保險。舊票券（這個
+// 功能上線前就報名的）可能還沒補資料，一樣列出來但欄位是空的，讓主辦方
+// 知道要提醒對方去「資料維護」補齊，而不是直接漏掉這個人。
+export async function listActiveParticipantsForInsurance(eventId) {
+  const q = query(collection(db, "tickets"), where("eventId", "==", eventId));
+  const snap = await getDocs(q);
+  const tickets = snap.docs.map((d) => d.data()).filter((t) => !t.isCancelled);
+
+  return Promise.all(
+    tickets.map(async (t) => {
+      const userSnap = await getDoc(doc(db, "users", t.userId));
+      const u = userSnap.exists() ? userSnap.data() : null;
+      return {
+        name: u?.name || "",
+        email: u?.email || "",
+        realName: u?.realName || "",
+        nationalId: u?.nationalId || "",
+        birthDate: u?.birthDate || "",
+      };
+    })
+  );
+}
+
 // 給主辦專區的活動管理用：Firestore 規則只允許 isAdmin() 呼叫這三個函式，
 // 一般使用者呼叫會被規則擋下來，不需要在這裡另外檢查權限。
 export async function createEvent(data) {
@@ -94,6 +118,20 @@ export async function getMyTicketForEvent(uid, eventId) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
+// 活動要幫參加者投保，需要真實姓名、身分證字號、出生年月日，這三個欄位
+// 不齊全就不能報名。用專屬的錯誤類別（而不是純文字訊息）讓畫面那邊能
+// 準確判斷「是資料沒填」還是其他報名失敗原因，進而導去資料維護頁面。
+export class ProfileIncompleteError extends Error {
+  constructor() {
+    super("請先到「資料維護」填寫真實姓名、身分證字號、出生年月日，活動需要這些資料幫你投保。");
+    this.name = "ProfileIncompleteError";
+  }
+}
+
+function hasCompleteProfile(userData) {
+  return Boolean(userData?.realName && userData?.nationalId && userData?.birthDate);
+}
+
 function randomSecurityCode() {
   return Array.from(crypto.getRandomValues(new Uint8Array(9)))
     .map((b) => b.toString(36))
@@ -116,6 +154,9 @@ export async function registerForEvent(eventId) {
   await runTransaction(db, async (tx) => {
     const eventSnap = await tx.get(eventRef);
     if (!eventSnap.exists()) throw new Error("活動不存在");
+
+    const userSnap = await tx.get(userRef);
+    if (!hasCompleteProfile(userSnap.data())) throw new ProfileIncompleteError();
 
     // 票券文件可能已經存在但是「已取消」的舊紀錄，這種情況要允許重新報名、
     // 把文件整個重置成剛報名的狀態；只有「存在且未取消」才擋下來。

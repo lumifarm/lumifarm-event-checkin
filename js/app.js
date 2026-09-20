@@ -8,6 +8,7 @@ import { renderReview } from "./views/review-view.js";
 import { renderOnboarding } from "./views/onboarding-view.js";
 import { renderEventDetail } from "./views/event-detail-view.js";
 import { renderFaq } from "./views/faq-view.js";
+import { renderProfile } from "./views/profile-view.js";
 
 initNavbar();
 
@@ -19,6 +20,7 @@ registerRoute("/review", renderReview);
 registerRoute("/onboarding", renderOnboarding);
 registerRoute("/event", renderEventDetail);
 registerRoute("/faq", renderFaq);
+registerRoute("/profile", renderProfile);
 
 window.addEventListener("hashchange", renderRoute);
 renderRoute();

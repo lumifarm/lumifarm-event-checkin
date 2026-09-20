@@ -8,6 +8,7 @@ import {
   updateEvent,
   deleteEvent,
   listActiveParticipantEmails,
+  listActiveParticipantsForInsurance,
   listPendingCancellations,
   approveCancellation,
   rejectCancellation,
@@ -87,6 +88,7 @@ export function renderAdmin(container) {
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="cancellations-section">取消申請</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="users-section">會員總覽</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="notice-section">行前通知</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="insurance-section">投保名單</button>
         </nav>
 
         <section id="event-form-section">
@@ -203,6 +205,27 @@ export function renderAdmin(container) {
                 按下後會在新分頁開啟 Gmail 網頁版的寫信視窗（用你目前登入的 Gmail 帳號），收件人已用密件副本（Bcc）帶入所有報名者，確認內容後要在 Gmail 裡按送出才會真的寄出。
               </p>
             </div>
+          </div>
+        </section>
+
+        <section id="insurance-section">
+          <h2 class="text-lg font-bold text-gray-800 mb-3">投保名單</h2>
+          <div class="bg-white rounded-xl shadow p-5 space-y-3">
+            <p class="text-xs text-gray-500">
+              匯出某活動目前還算數的報名者（不含已取消）的真實姓名、身分證字號、出生年月日，供辦理活動保險使用。這些是高度敏感個資，請只在需要投保時匯出、辦好保險後盡快刪除下載或複製出去的內容，不要留存在不必要的地方。
+            </p>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">選擇活動</label>
+              <select id="insurance-event" class="w-full border rounded-lg p-2"></select>
+            </div>
+            <button type="button" id="insurance-generate" class="btn-primary text-sm">產生投保名單</button>
+            <p id="insurance-missing-note" class="hidden text-sm text-amber-700"></p>
+            <textarea
+              id="insurance-output"
+              readonly
+              rows="8"
+              class="hidden w-full border rounded-lg p-2 text-xs font-mono"
+            ></textarea>
           </div>
         </section>
       </div>
@@ -501,10 +524,19 @@ export function renderAdmin(container) {
   function renderUserRow(u) {
     const tr = document.createElement("tr");
     tr.className = "border-t";
-    const cells = [u.name || "", u.email || "", u.totalEvents || 0, u.attendedEvents || 0, u.cancelled || 0, `${u.rate}%`];
+    const hasInsuranceInfo = Boolean(u.realName && u.nationalId && u.birthDate);
+    const cells = [
+      u.name || "",
+      u.email || "",
+      u.totalEvents || 0,
+      u.attendedEvents || 0,
+      u.cancelled || 0,
+      `${u.rate}%`,
+      hasInsuranceInfo ? "✓" : "✗",
+    ];
     cells.forEach((val, i) => {
       const td = document.createElement("td");
-      td.className = `p-3 text-sm ${i >= 2 ? "text-center" : ""}`;
+      td.className = `p-3 text-sm ${i >= 2 ? "text-center" : ""} ${i === 6 && !hasInsuranceInfo ? "text-red-500" : ""}`;
       td.textContent = val;
       tr.appendChild(td);
     });
@@ -530,6 +562,7 @@ export function renderAdmin(container) {
         <th class="p-3 text-center">出席次數</th>
         <th class="p-3 text-center">取消次數</th>
         <th class="p-3 text-center">出席率</th>
+        <th class="p-3 text-center">投保資料</th>
       </tr>`;
     const tbody = document.createElement("tbody");
     users.forEach((u) => tbody.appendChild(renderUserRow(u)));
@@ -610,6 +643,68 @@ export function renderAdmin(container) {
     window.open(url, "_blank");
   });
 
+  const insuranceEventSelect = container.querySelector("#insurance-event");
+  const insuranceGenerateBtn = container.querySelector("#insurance-generate");
+  const insuranceOutput = container.querySelector("#insurance-output");
+  const insuranceMissingNote = container.querySelector("#insurance-missing-note");
+
+  let insuranceEventsCache = [];
+
+  async function populateInsuranceEventSelect() {
+    insuranceEventsCache = await listEvents();
+    insuranceEventSelect.innerHTML = insuranceEventsCache
+      .map((ev) => `<option value="${ev.id}">${ev.title || "（未命名活動）"}</option>`)
+      .join("");
+  }
+
+  insuranceEventSelect.addEventListener("change", () => {
+    insuranceOutput.classList.add("hidden");
+    insuranceMissingNote.classList.add("hidden");
+  });
+
+  insuranceGenerateBtn.addEventListener("click", async () => {
+    const ev = insuranceEventsCache.find((e) => e.id === insuranceEventSelect.value);
+    if (!ev) {
+      alert("請先選擇活動");
+      return;
+    }
+
+    insuranceGenerateBtn.disabled = true;
+    insuranceGenerateBtn.textContent = "產生中...";
+    try {
+      const rows = await listActiveParticipantsForInsurance(ev.id);
+      if (rows.length === 0) {
+        insuranceOutput.classList.add("hidden");
+        insuranceMissingNote.classList.remove("hidden");
+        insuranceMissingNote.textContent = "這個活動目前沒有任何有效報名者（可能都取消了）。";
+        return;
+      }
+
+      const missing = rows.filter((r) => !r.realName || !r.nationalId || !r.birthDate);
+      const header = "姓名,身分證字號,出生年月日,Email";
+      const lines = rows.map((r) =>
+        [
+          r.realName || "（尚未填寫）",
+          r.nationalId || "（尚未填寫）",
+          r.birthDate || "（尚未填寫）",
+          r.email || "",
+        ].join(",")
+      );
+      insuranceOutput.value = [header, ...lines].join("\n");
+      insuranceOutput.classList.remove("hidden");
+
+      if (missing.length > 0) {
+        insuranceMissingNote.classList.remove("hidden");
+        insuranceMissingNote.textContent = `有 ${missing.length} 位報名者尚未在「資料維護」補齊真實資料，名單裡標示為「尚未填寫」，需要另外提醒他們補資料。`;
+      } else {
+        insuranceMissingNote.classList.add("hidden");
+      }
+    } finally {
+      insuranceGenerateBtn.disabled = false;
+      insuranceGenerateBtn.textContent = "產生投保名單";
+    }
+  });
+
   const unsubscribe = onAuthStateChanged(auth, async (user) => {
     if (!user) {
       adminGate.textContent = "請先登入。";
@@ -633,6 +728,7 @@ export function renderAdmin(container) {
     renderPendingCancellations();
     renderUsersOverview();
     populateNoticeEventSelect();
+    populateInsuranceEventSelect();
   });
 
   return () => unsubscribe();

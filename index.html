@@ -27,10 +27,15 @@
         <a href="#/faq" data-route="/faq" class="hover:underline">常見問題</a>
         <a href="#/onboarding" data-route="/onboarding" class="hover:underline">新手教學</a>
         <button id="btn-login" class="bg-white text-emerald-700 px-3 py-1 rounded-full font-bold">使用 Google 登入</button>
-        <div id="nav-user-info" class="hidden items-center gap-2">
-          <img id="nav-user-photo" class="w-8 h-8 rounded-full border-2 border-white" />
-          <span id="nav-user-name" class="hidden sm:inline"></span>
-          <button id="btn-logout" class="underline">登出</button>
+        <div id="nav-user-info" class="hidden relative items-center gap-2">
+          <button id="nav-user-toggle" type="button" class="flex items-center gap-2">
+            <img id="nav-user-photo" class="w-8 h-8 rounded-full border-2 border-white" />
+            <span id="nav-user-name" class="hidden sm:inline"></span>
+          </button>
+          <div id="nav-user-menu" class="hidden absolute right-0 top-10 bg-white text-gray-800 rounded-lg shadow-lg py-2 w-40 z-20">
+            <a href="#/profile" data-route="/profile" class="block px-4 py-2 text-sm hover:bg-gray-100">資料維護</a>
+            <button id="btn-logout" type="button" class="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">登出</button>
+          </div>
         </div>
       </div>
     </div>

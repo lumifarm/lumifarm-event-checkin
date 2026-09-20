@@ -15,6 +15,15 @@ service cloud.firestore {
     function ticketOwnedByCaller() {
       return isSignedIn() && resource.data.userId == request.auth.uid;
     }
+    // 活動要幫參加者投保，需要真實姓名、身分證字號、出生年月日都填過才能報名，
+    // 跟免費活動價格檢查一樣用 get() 讀使用者自己的文件做確認，不能只信任
+    // 前端送來的資料。
+    function hasCompleteProfile(uid) {
+      let u = get(/databases/$(database)/documents/users/$(uid)).data;
+      return u.get('realName', '') != '' &&
+        u.get('nationalId', '') != '' &&
+        u.get('birthDate', '') != '';
+    }
 
     // 主辦方名單：手動在 Firebase Console 建立文件，文件 ID = 使用者的 uid
     match /admins/{adminId} {
@@ -29,7 +38,7 @@ service cloud.firestore {
       allow update: if
         (isOwner(userId) &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['name', 'email', 'photoURL', 'totalEvents'])) ||
+            .hasOnly(['name', 'email', 'photoURL', 'totalEvents', 'realName', 'nationalId', 'birthDate'])) ||
         isAdmin();
     }
 
@@ -58,6 +67,7 @@ service cloud.firestore {
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.isCheckedIn == false &&
         request.resource.data.isCancelled == false &&
+        hasCompleteProfile(request.auth.uid) &&
         (
           request.resource.data.paymentStatus == 'unpaid' ||
           (request.resource.data.paymentStatus == 'paid' &&
@@ -93,6 +103,7 @@ service cloud.firestore {
           request.resource.data.eventId == resource.data.eventId &&
           request.resource.data.isCheckedIn == false &&
           request.resource.data.isCancelled == false &&
+          hasCompleteProfile(request.auth.uid) &&
           (
             request.resource.data.paymentStatus == 'unpaid' ||
             (request.resource.data.paymentStatus == 'paid' &&

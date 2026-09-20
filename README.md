@@ -18,6 +18,7 @@
 - **取消報名（需主辦方審核）**：報名成功後直接跳到「我的票券」引導完成繳費；還沒報到的票券可以在「我的票券」申請取消，取消前會顯示退款須知並依距離活動天數試算退款比例，送出後進入「審核中」，要主辦方在「主辦專區」核准才會真的取消、退還名額；駁回的話活動照常進行、不退費。
 - **手機版漢堡選單**：導覽列在手機寬度下會收成漢堡選單（右上角按鈕點開/收起），點任一連結會自動收起選單；桌機寬度維持原本橫向排列，不受影響。
 - **FAQ／常見問題頁面**：`#/faq`，整理登入、繳費、取消、報到、評價等常見問題的問答，導覽列有「常見問題」連結。
+- **投保個資（資料維護）**：活動需要幫參加者投保，點右上角自己的頭像/名稱會出現「資料維護」選項（`#/profile`），可以填寫並隨時修改真實姓名、身分證字號、出生年月日。這三個欄位沒填齊之前無法報名任何活動，報名按鈕會被 Firestore 規則擋下來並引導去補資料；主辦專區也能匯出某活動的投保名單（詳見下方「投保個資與投保名單」）。
 
 ## 架構
 
@@ -41,8 +42,10 @@ js/payment.js             匯款資訊、繳費通知、主辦方確認收款
 js/reviews.js             送出活動評價
 js/notices.js             行前通知的郵件內容組裝（Gmail 網頁版寫信連結）
 js/tags.js                活動標籤分類清單（顏色、圖示）
+js/profile.js             投保個資（真實姓名/身分證字號/出生年月日）的讀取、驗證、更新
 js/views/*.js             各路由畫面：把 HTML 畫進傳入的容器、回傳 cleanup 函式
 js/views/faq-view.js      常見問題頁面（純靜態問答內容）
+js/views/profile-view.js  資料維護頁面（#/profile）
 firestore.rules           Firestore 安全性規則
 ```
 
@@ -50,7 +53,7 @@ firestore.rules           Firestore 安全性規則
 
 | Collection | 欄位 |
 | --- | --- |
-| `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, cancelledEvents, createdAt |
+| `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, cancelledEvents, createdAt, realName（真實姓名，可省略表示未填）, nationalId（身分證字號，可省略表示未填）, birthDate（出生年月日字串 YYYY-MM-DD，可省略表示未填） |
 | `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), currentCount (number), posterUrl (string, 可省略), tags (string[], 值對應 `js/tags.js` 的 `EVENT_TAGS` id) |
 | `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, cancelRequestStatus ("pending"/"approved"/null), cancelRequestedAt, cancelRefundPercent, securityCode, createdAt |
 | `reviews/{reviewId}` | userId, eventId, rating (1-5), comment, createdAt |
@@ -67,6 +70,18 @@ firestore.rules           Firestore 安全性規則
 規則上刻意只允許本人把狀態改成 `pending`、不能直接改成 `paid`，避免有人謊報已繳費。
 
 免費活動（`price` 是 0）例外：報名當下票券直接建立成 `paid`，不用走匯款通知這一段。Firestore 規則會用 `get()` 讀真正的活動價格做確認，不是只信任前端送來的資料，所以沒辦法對付費活動謊報自己免費/已繳費。
+
+## 投保個資與投保名單
+
+活動要幫參加者辦理保險，需要真實姓名、身分證字號、出生年月日，這些跟 Google 帳號的顯示名稱/Email 是分開的兩組資料：
+
+- **會員自己填寫、隨時可改**：點導覽列右上角自己的頭像或名稱會出現一個下拉選單，裡面有「資料維護」（`#/profile`），可以填寫或修改這三個欄位。存進 `users/{uid}` 的 `realName`／`nationalId`／`birthDate` 三個欄位，Firestore 規則只允許本人或主辦方讀寫，跟其他人的個資完全隔開。
+- **報名前強制檢查**：這三個欄位沒有全部填過的話，「活動列表」上方會出現提示、引導去補資料；就算跳過提示硬按報名鍵，`js/events.js` 的 `registerForEvent` 跟 `firestore.rules` 的 `hasCompleteProfile()` 也會在最後一關擋下來（前端擋一次、規則再擋一次，前端只是體驗好一點，真正的把關在規則那邊）。
+- **身分證字號格式檢查**：`js/profile.js` 的 `TAIWAN_ID_REGEX` 只檢查台灣身分證字號的格式（1 個大寫英文字母 + 9 碼數字），不做驗證碼演算法檢查。
+- **主辦方匯出投保名單**：「主辦專區」的「投保名單」區塊，選一個活動、按「產生投保名單」，會列出該活動目前還算數的報名者（不含已取消）的姓名/身分證字號/出生年月日/Email，供辦理保險使用；這個功能上線前就報名、還沒補資料的舊會員會顯示「（尚未填寫）」，方便主辦方知道要另外提醒誰。
+- **會員總覽多一個欄位**：「會員總覽」表格新增「投保資料」欄，用 ✓/✗ 表示該會員是否已經填齊三個欄位，不會直接顯示身分證字號本身，避免在日常瀏覽時不必要地曝光敏感個資。
+
+⚠️ 身分證字號、出生年月日都是高度敏感個資，「投保名單」產生的內容只在需要投保時使用，用完（複製給保險公司、或下載存檔辦完保險）之後盡快清掉瀏覽器裡的內容，不要不必要地截圖、外流或長期留存在其他地方。
 
 ## 活動海報圖片
 
@@ -152,6 +167,7 @@ npx serve .
 - 每個人只能讀寫自己的個資與票券；`paymentStatus` 可由本人更新（例如標記自己已完成轉帳），但報到狀態 `isCheckedIn` 只有 `admins` 名單內的帳號能改。
 - `admins` collection 完全禁止透過前端寫入，只能在 Firebase Console 手動新增，避免使用者自行把自己加進主辦方名單。
 - QR Code 內容包含 `ticketId` 與隨機產生的 `securityCode`，報到掃描時會比對 Firestore 內存的驗證碼，避免有人自行編造 QR Code 內容混入報到。
+- 報名（`tickets` 的 create，以及取消後重新報名的 update 分支）都會用 `hasCompleteProfile()` 讀本人 `users/{uid}` 的 `realName`／`nationalId`／`birthDate`，沒填齊就擋下來，前端沒攔到的話規則這邊會是最後一關。
 
 ## 可能的後續擴充（非本版本範圍）
 
