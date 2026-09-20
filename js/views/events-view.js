@@ -58,7 +58,16 @@ export function renderEvents(container) {
       const pay = paymentStatusLabel(ticket.paymentStatus);
       const cancelBadge =
         ticket.cancelRequestStatus === "pending" ? `<span class="badge badge-yellow">取消審核中</span>` : "";
-      actionHtml = `<div class="flex flex-wrap items-center gap-2"><span class="badge badge-blue">已報名</span><span class="badge ${pay.cls}">${pay.text}</span>${cancelBadge}</div>`;
+      // 使用者反映報名完之後不知道要去哪裡繳費，這裡直接連去「我的票券」，
+      // 未繳費的話文字特別提醒是去繳費，其他狀態則只是方便查看。
+      const ticketsLink =
+        ticket.paymentStatus === "unpaid"
+          ? `<a href="#/tickets" class="text-sm text-emerald-700 underline font-bold">前往我的票券完成繳費 →</a>`
+          : `<a href="#/tickets" class="text-sm text-emerald-700 underline">查看我的票券 →</a>`;
+      actionHtml = `<div class="flex flex-col gap-2">
+        <div class="flex flex-wrap items-center gap-2"><span class="badge badge-blue">已報名</span><span class="badge ${pay.cls}">${pay.text}</span>${cancelBadge}</div>
+        ${ticketsLink}
+      </div>`;
     } else if (isPast) {
       actionHtml = `<button class="btn-disabled" disabled>活動已結束</button>`;
     } else if (full) {
