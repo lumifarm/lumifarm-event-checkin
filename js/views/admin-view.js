@@ -76,7 +76,16 @@ export function renderAdmin(container) {
       <p id="admin-gate" class="hidden text-gray-500 py-8"></p>
 
       <div id="admin-section" class="hidden space-y-10">
-        <section>
+        <nav class="flex flex-wrap gap-2 sticky top-0 bg-gray-50 py-2 z-10 -mx-1 px-1">
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="event-form-section">新增活動</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="event-manage-section">活動管理</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="payments-section">待確認繳費</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="cancellations-section">取消申請</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="users-section">會員總覽</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="notice-section">行前通知</button>
+        </nav>
+
+        <section id="event-form-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3" id="event-form-title">新增活動</h2>
           <form id="event-form" class="bg-white rounded-xl shadow p-5 space-y-3">
             <div>
@@ -137,27 +146,27 @@ export function renderAdmin(container) {
           </form>
         </section>
 
-        <section>
+        <section id="event-manage-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">活動管理</h2>
           <div id="event-manage-list" class="space-y-3"></div>
         </section>
 
-        <section>
+        <section id="payments-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">待確認繳費</h2>
           <div id="pending-payments" class="space-y-3"></div>
         </section>
 
-        <section>
+        <section id="cancellations-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">取消申請</h2>
           <div id="pending-cancellations" class="space-y-3"></div>
         </section>
 
-        <section>
+        <section id="users-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">會員總覽</h2>
           <div id="user-overview" class="bg-white rounded-xl shadow overflow-x-auto"></div>
         </section>
 
-        <section>
+        <section id="notice-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">行前通知</h2>
           <div class="bg-white rounded-xl shadow p-5 space-y-3">
             <div>
@@ -197,6 +206,17 @@ export function renderAdmin(container) {
 
   const adminGate = container.querySelector("#admin-gate");
   const adminSection = container.querySelector("#admin-section");
+
+  // 用 scrollIntoView 而不是 <a href="#id">：這個網站是 hash 路由的 SPA
+  // （#/admin 這種），如果用一般錨點連結，改網址 hash 會被路由器誤判成
+  // 一個新的（不存在的）路由，反而跳回首頁。
+  container.querySelectorAll(".admin-nav-link").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = container.querySelector(`#${btn.dataset.target}`);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
   const pendingEl = container.querySelector("#pending-payments");
   const eventListEl = container.querySelector("#event-manage-list");
   const cancellationsEl = container.querySelector("#pending-cancellations");
@@ -362,6 +382,11 @@ export function renderAdmin(container) {
     return row;
   }
 
+  function eventDateOf(ev) {
+    if (!ev.date) return null;
+    return ev.date.toDate ? ev.date.toDate() : new Date(ev.date);
+  }
+
   async function renderEventList() {
     const events = await listEvents();
     eventListEl.innerHTML = "";
@@ -372,7 +397,13 @@ export function renderAdmin(container) {
       eventListEl.appendChild(empty);
       return;
     }
-    events.forEach((ev) => eventListEl.appendChild(renderEventRow(ev)));
+    // 跟活動列表頁一樣，日期新到舊排序
+    const sorted = [...events].sort((a, b) => {
+      const da = eventDateOf(a) || new Date(0);
+      const db = eventDateOf(b) || new Date(0);
+      return db - da;
+    });
+    sorted.forEach((ev) => eventListEl.appendChild(renderEventRow(ev)));
   }
 
   async function renderPendingPayments() {
