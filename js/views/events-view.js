@@ -17,6 +17,60 @@ function eventDateOf(ev) {
   return ev.date.toDate ? ev.date.toDate() : new Date(ev.date);
 }
 
+// 有些活動報名前需要先回答主辦方設定的問題（例如飲食禁忌、程度），這裡跳出
+// 一個小視窗要求先回答才送出報名；問題文字是主辦方自己在新增活動時填的，
+// 只有主辦方能寫這個欄位，用 innerHTML 沒有風險，跟活動說明欄位一樣。
+function showQuestionModal({ question, onSubmit }) {
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50";
+
+  const box = document.createElement("div");
+  box.className = "card rounded-xl max-w-md w-full p-6";
+  box.innerHTML = `
+    <h2 class="text-lg font-bold text-gray-800 mb-2">報名前，請先回答這個問題</h2>
+    <p class="text-sm text-gray-700 whitespace-pre-wrap mb-3 bg-amber-50 border border-amber-200 rounded-lg p-3">${question}</p>`;
+
+  const textarea = document.createElement("textarea");
+  textarea.rows = 4;
+  textarea.className = "w-full border rounded-lg p-2 text-sm mb-4";
+  textarea.placeholder = "請輸入你的回答";
+  box.appendChild(textarea);
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "flex gap-3 justify-end";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "text-sm text-gray-500 underline";
+  cancelBtn.textContent = "取消";
+  cancelBtn.addEventListener("click", () => overlay.remove());
+
+  const submitBtn = document.createElement("button");
+  submitBtn.className = "btn-primary text-sm";
+  submitBtn.textContent = "送出並完成報名";
+  submitBtn.addEventListener("click", async () => {
+    const answer = textarea.value.trim();
+    if (!answer) {
+      alert("請先回答這個問題再送出");
+      return;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = "報名中...";
+    try {
+      await onSubmit(answer);
+      overlay.remove();
+    } catch (e) {
+      alert("報名失敗：" + e.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = "送出並完成報名";
+    }
+  });
+
+  btnRow.append(cancelBtn, submitBtn);
+  box.appendChild(btnRow);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
 export function renderEvents(container) {
   container.innerHTML = `
     <div class="max-w-5xl mx-auto">
@@ -100,19 +154,40 @@ export function renderEvents(container) {
   function wireRegisterButtons(root) {
     root.querySelectorAll(".btn-register").forEach((btn) => {
       btn.addEventListener("click", async () => {
+        const eventId = btn.dataset.eventId;
+        const ev = cachedEvents.find((e) => e.id === eventId);
+        const question = ev?.registrationQuestion?.trim();
+
+        // ProfileIncompleteError 在這裡先攔下來處理（alert + 導去資料維護），
+        // 不往外拋，讓呼叫端（不論是不是走問題視窗）不用各自重複判斷；
+        // 其他錯誤照樣往外拋，兩邊各自的 catch 會顯示「報名失敗：...」。
+        async function submitRegistration(answer) {
+          try {
+            await registerForEvent(eventId, answer);
+            alert("報名成功！接下來請完成繳費。");
+            location.hash = "#/tickets";
+          } catch (e) {
+            if (e instanceof ProfileIncompleteError) {
+              alert(e.message);
+              location.hash = "#/profile";
+              return;
+            }
+            throw e;
+          }
+        }
+
+        if (question) {
+          showQuestionModal({ question, onSubmit: submitRegistration });
+          return;
+        }
+
         btn.disabled = true;
         btn.textContent = "報名中...";
         try {
-          await registerForEvent(btn.dataset.eventId);
-          alert("報名成功！接下來請完成繳費。");
-          location.hash = "#/tickets";
+          await submitRegistration();
         } catch (e) {
-          if (e instanceof ProfileIncompleteError) {
-            alert(e.message);
-            location.hash = "#/profile";
-            return;
-          }
           alert("報名失敗：" + e.message);
+        } finally {
           btn.disabled = false;
           btn.textContent = "立即報名";
         }

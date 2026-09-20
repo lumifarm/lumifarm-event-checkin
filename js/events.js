@@ -71,6 +71,26 @@ export async function listActiveParticipantsForInsurance(eventId) {
   );
 }
 
+// 給主辦專區「報名問題回覆」用：某活動目前還算數的報名者（排除已取消）
+// 填的報名問題答案，沒填（例如活動當時沒有設定問題）就不列進來。
+export async function listRegistrationAnswers(eventId) {
+  const q = query(collection(db, "tickets"), where("eventId", "==", eventId));
+  const snap = await getDocs(q);
+  const tickets = snap.docs.map((d) => d.data()).filter((t) => !t.isCancelled && t.registrationAnswer);
+
+  return Promise.all(
+    tickets.map(async (t) => {
+      const userSnap = await getDoc(doc(db, "users", t.userId));
+      const u = userSnap.exists() ? userSnap.data() : null;
+      return {
+        name: u?.name || "",
+        email: u?.email || "",
+        answer: t.registrationAnswer,
+      };
+    })
+  );
+}
+
 // 給主辦專區「換工點數一鍵發放」用：某活動目前已報到、未取消的票券
 // （連同票券文件本身一起回傳，因為要在同一個 batch 裡順便標記
 // workPointsAwarded，避免同一個人被重複發放同一場活動的點數）。
@@ -94,6 +114,7 @@ export async function createEvent(data) {
     maxCap: data.maxCap ?? null,
     posterUrl: data.posterUrl || null,
     tags: data.tags || [],
+    registrationQuestion: data.registrationQuestion || null,
     currentCount: 0,
   });
 }
@@ -108,6 +129,7 @@ export async function updateEvent(eventId, data) {
     maxCap: data.maxCap ?? null,
     posterUrl: data.posterUrl || null,
     tags: data.tags || [],
+    registrationQuestion: data.registrationQuestion || null,
   });
 }
 
@@ -153,7 +175,7 @@ function randomSecurityCode() {
 
 // 報名活動：交易內先檢查是否已報名過、再檢查名額，最後同時建立票券、
 // 活動人數 +1、個人總報名次數 +1，全部在同一個 transaction 內完成
-export async function registerForEvent(eventId) {
+export async function registerForEvent(eventId, registrationAnswer) {
   const user = auth.currentUser;
   if (!user) throw new Error("請先登入");
 
@@ -215,6 +237,7 @@ export async function registerForEvent(eventId) {
       securityCode,
       discountApplied: applyDiscount,
       couponId: applyDiscount ? couponRef.id : null,
+      registrationAnswer: registrationAnswer || null,
       createdAt: serverTimestamp(),
     });
     tx.update(eventRef, { currentCount: increment(1) });

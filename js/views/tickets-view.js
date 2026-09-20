@@ -237,6 +237,11 @@ export function renderTickets(container) {
             ${cancelPending ? `<span class="badge badge-yellow">取消審核中</span>` : ""}
           </div>
           ${workFormHtml}
+          ${
+            t.registrationAnswer
+              ? `<p class="text-xs text-gray-500 mt-2">你的報名回覆：${t.registrationAnswer}</p>`
+              : ""
+          }
           ${cancelPending || isPast ? "" : paymentSectionHtml(t)}
           ${actionHtml}
         </div>

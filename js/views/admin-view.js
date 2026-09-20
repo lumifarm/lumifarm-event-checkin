@@ -9,6 +9,7 @@ import {
   deleteEvent,
   listActiveParticipantEmails,
   listActiveParticipantsForInsurance,
+  listRegistrationAnswers,
   listCheckedInTickets,
   listPendingCancellations,
   approveCancellation,
@@ -96,6 +97,7 @@ export function renderAdmin(container) {
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="users-section">會員總覽</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="notice-section">行前通知</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="insurance-section">投保名單</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="questions-section">報名問題回覆</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="work-points-section">換工點數</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="discount-section">出席折扣券</button>
         </nav>
@@ -140,6 +142,18 @@ export function renderAdmin(container) {
                   </label>`
                 ).join("")}
               </div>
+            </div>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">報名前需要回答的問題（選填）</label>
+              <textarea
+                id="ev-registration-question"
+                rows="2"
+                class="w-full border rounded-lg p-2"
+                placeholder="例如：請問有無飲食禁忌或特殊需求？"
+              ></textarea>
+              <p class="text-xs text-gray-500 mt-1">
+                有填的話，會員按「立即報名」時會先跳出視窗要求回答，答了才會真的送出報名；不填就跟現在一樣直接報名，不會多一個步驟。
+              </p>
             </div>
             <div>
               <label class="text-sm text-gray-600 block mb-1">活動海報圖片網址（選填）</label>
@@ -235,6 +249,20 @@ export function renderAdmin(container) {
               rows="8"
               class="hidden w-full border rounded-lg p-2 text-xs font-mono"
             ></textarea>
+          </div>
+        </section>
+
+        <section id="questions-section">
+          <h2 class="text-lg font-bold text-gray-800 mb-3">報名問題回覆</h2>
+          <div class="card rounded-xl p-5 space-y-3">
+            <p class="text-xs text-gray-500">
+              只有新增/編輯活動時有填「報名前需要回答的問題」的活動，會員報名時才會被要求回答；這裡選一個活動看大家的回覆。
+            </p>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">選擇活動</label>
+              <select id="questions-event" class="w-full border rounded-lg p-2"></select>
+            </div>
+            <div id="questions-list" class="space-y-2"></div>
           </div>
         </section>
 
@@ -349,6 +377,7 @@ export function renderAdmin(container) {
     price: container.querySelector("#ev-price"),
     maxCap: container.querySelector("#ev-maxcap"),
     posterUrl: container.querySelector("#ev-poster-url"),
+    registrationQuestion: container.querySelector("#ev-registration-question"),
   };
 
   const tagCheckboxes = Array.from(container.querySelectorAll(".ev-tag-checkbox"));
@@ -397,6 +426,7 @@ export function renderAdmin(container) {
     fields.price.value = ev.price || 0;
     fields.maxCap.value = ev.maxCap || "";
     fields.posterUrl.value = ev.posterUrl || "";
+    fields.registrationQuestion.value = ev.registrationQuestion || "";
     showPosterPreview(ev.posterUrl || null);
     setCheckedTags(ev.tags || []);
     formTitleEl.textContent = `編輯活動：${ev.title || ""}`;
@@ -417,6 +447,7 @@ export function renderAdmin(container) {
       price: Number(fields.price.value) || 0,
       maxCap: fields.maxCap.value.trim() === "" ? null : Number(fields.maxCap.value),
       posterUrl: fields.posterUrl.value.trim() || null,
+      registrationQuestion: fields.registrationQuestion.value.trim() || null,
       tags: getCheckedTags(),
     };
     if (!data.title || !data.date) {
@@ -792,6 +823,57 @@ export function renderAdmin(container) {
     }
   });
 
+  const questionsEventSelect = container.querySelector("#questions-event");
+  const questionsListEl = container.querySelector("#questions-list");
+
+  let questionsEventsCache = [];
+
+  async function populateQuestionsEventSelect() {
+    questionsEventsCache = await listEvents();
+    questionsEventSelect.innerHTML = questionsEventsCache
+      .map((ev) => `<option value="${ev.id}">${ev.title || "（未命名活動）"}</option>`)
+      .join("");
+    renderQuestionsAnswers();
+  }
+
+  // 回答內容是會員自己輸入的文字，屬於不可信任的使用者輸入，用
+  // createElement + textContent 手動組，不能用 innerHTML 拼字串。
+  async function renderQuestionsAnswers() {
+    const eventId = questionsEventSelect.value;
+    questionsListEl.innerHTML = "";
+    if (!eventId) return;
+
+    const ev = questionsEventsCache.find((e) => e.id === eventId);
+    if (!ev?.registrationQuestion) {
+      questionsListEl.innerHTML = `<p class="text-sm text-gray-500 p-2">這場活動沒有設定報名問題。</p>`;
+      return;
+    }
+
+    const rows = await listRegistrationAnswers(eventId);
+    if (rows.length === 0) {
+      questionsListEl.innerHTML = `<p class="text-sm text-gray-500 p-2">目前還沒有人回答。</p>`;
+      return;
+    }
+
+    rows.forEach((r) => {
+      const row = document.createElement("div");
+      row.className = "bg-white rounded-lg border p-3";
+
+      const who = document.createElement("p");
+      who.className = "text-sm font-bold text-gray-700";
+      who.textContent = `${r.name || "（未命名）"}（${r.email || ""}）`;
+
+      const answer = document.createElement("p");
+      answer.className = "text-sm text-gray-600 mt-1 whitespace-pre-wrap";
+      answer.textContent = r.answer;
+
+      row.append(who, answer);
+      questionsListEl.appendChild(row);
+    });
+  }
+
+  questionsEventSelect.addEventListener("change", renderQuestionsAnswers);
+
   const wpForm = container.querySelector("#work-points-form");
   const wpUserSelect = container.querySelector("#wp-user");
   const wpEventSelect = container.querySelector("#wp-event");
@@ -1019,6 +1101,7 @@ export function renderAdmin(container) {
     renderUsersOverview();
     populateNoticeEventSelect();
     populateInsuranceEventSelect();
+    populateQuestionsEventSelect();
     populateWorkPointsForm();
     populateWpBulkEventSelect();
     renderDiscountEligible();
