@@ -10,7 +10,8 @@
 - **現場報到掃描**：主辦方在「報到管理」頁面用手機鏡頭掃描參加者的 QR Code，系統驗證後自動把該筆票券標記為已報到。
 - **主辦專區**：活動新增/編輯/刪除（含貼上海報圖片網址）、核對匯款、審核取消申請、會員總覽、行前通知都在這一頁。
 - **活動詳細頁**：活動列表跟我的票券的活動名稱都是連結，點進去可以看到該活動的完整說明、海報、地點、費用與名額。
-- **行前通知**：主辦方在「主辦專區」選一個活動、輸入通知內容，系統會列出目前有效報名者（不含已取消）的人數，按「產生郵件內容」會先在頁面上顯示可編輯的主旨與內文，確認沒問題後按「開啟信件並發送」才會叫出信箱軟體、收件人用密件副本帶入所有報名者，真正送出還是要在信箱軟體裡按一次送出。
+- **行前通知**：主辦方在「主辦專區」選一個活動、輸入通知內容，系統會列出目前有效報名者（不含已取消）的人數，按「產生郵件內容」會先在頁面上顯示可編輯的主旨與內文，確認沒問題後按「開啟 Gmail 並發送」會在新分頁開啟 Gmail 網頁版寫信視窗（用目前登入的 Gmail 帳號），收件人用密件副本帶入所有報名者，真正送出還是要在 Gmail 裡按一次送出。
+- **活動標籤**：新增/編輯活動時可以複選標籤（食農教育、身心平衡、田間體驗、合作經濟），活動列表、詳細頁、主辦專區的活動管理都會用對應顏色的色塊顯示，方便一眼看出活動類型。
 - **評價與出席率**：活動報到後即可填寫星級評價與文字回饋；個人中心會顯示總報名次數、實際出席次數、取消次數與出席率。
 - **新手教學**：第一次造訪網站會彈出引導視窗，帶去「新手教學」頁面說明整個使用流程。
 - **取消報名（需主辦方審核）**：報名成功後直接跳到「我的票券」引導完成繳費；還沒報到的票券可以在「我的票券」申請取消，取消前會顯示退款須知並依距離活動天數試算退款比例，送出後進入「審核中」，要主辦方在「主辦專區」核准才會真的取消、退還名額；駁回的話活動照常進行、不退費。
@@ -35,6 +36,8 @@ js/tickets.js             我的票券、QR Code 產生、出席率計算
 js/checkin.js             報到掃描驗證與更新邏輯
 js/payment.js             匯款資訊、繳費通知、主辦方確認收款
 js/reviews.js             送出活動評價
+js/notices.js             行前通知的郵件內容組裝（Gmail 網頁版寫信連結）
+js/tags.js                活動標籤分類清單（顏色、圖示）
 js/views/*.js             各路由畫面：把 HTML 畫進傳入的容器、回傳 cleanup 函式
 firestore.rules           Firestore 安全性規則
 ```
@@ -44,7 +47,7 @@ firestore.rules           Firestore 安全性規則
 | Collection | 欄位 |
 | --- | --- |
 | `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, cancelledEvents, createdAt |
-| `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), currentCount (number), posterUrl (string, 可省略) |
+| `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), currentCount (number), posterUrl (string, 可省略), tags (string[], 值對應 `js/tags.js` 的 `EVENT_TAGS` id) |
 | `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, cancelRequestStatus ("pending"/"approved"/null), cancelRequestedAt, cancelRefundPercent, securityCode, createdAt |
 | `reviews/{reviewId}` | userId, eventId, rating (1-5), comment, createdAt |
 | `admins/{uid}` | 只要文件存在即代表該使用者是主辦方（可放任意欄位，例如 `{ addedAt: ... }`） |

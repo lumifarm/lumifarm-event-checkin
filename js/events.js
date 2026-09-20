@@ -58,6 +58,7 @@ export async function createEvent(data) {
     price: data.price || 0,
     maxCap: data.maxCap ?? null,
     posterUrl: data.posterUrl || null,
+    tags: data.tags || [],
     currentCount: 0,
   });
 }
@@ -71,6 +72,7 @@ export async function updateEvent(eventId, data) {
     price: data.price || 0,
     maxCap: data.maxCap ?? null,
     posterUrl: data.posterUrl || null,
+    tags: data.tags || [],
   });
 }
 

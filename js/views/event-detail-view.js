@@ -1,6 +1,7 @@
 import { db } from "../firebase-config.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { currentQuery } from "../router.js";
+import { renderTagBadgesHtml } from "../tags.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -31,6 +32,7 @@ export async function renderEventDetail(container) {
     <div class="max-w-2xl mx-auto">
       ${posterHtml}
       <h1 class="text-2xl font-bold text-gray-800 mb-2">${ev.title || ""}</h1>
+      ${ev.tags && ev.tags.length > 0 ? `<div class="flex flex-wrap gap-1 mb-2">${renderTagBadgesHtml(ev.tags)}</div>` : ""}
       <p class="text-sm text-gray-500 mb-4">${formatDate(ev.date)} · ${ev.location || ""}</p>
       <div class="bg-white rounded-xl shadow p-5 space-y-3">
         <p class="text-gray-700 whitespace-pre-wrap">${ev.description || "（尚無活動說明）"}</p>
@@ -39,6 +41,14 @@ export async function renderEventDetail(container) {
           <span>名額：${ev.currentCount || 0}/${ev.maxCap || "不限"}</span>
         </div>
       </div>
-      <a href="#/events" class="inline-block mt-4 text-sm text-emerald-600 underline">← 返回活動列表</a>
+      <button id="event-detail-back" type="button" class="inline-block mt-4 text-sm text-emerald-600 underline">
+        ← 返回
+      </button>
     </div>`;
+
+  // 用瀏覽器的上一頁，而不是寫死回「活動列表」：這個頁面可能是從活動列表
+  // 或「我的票券」點進來的，回上一頁才會回到使用者原本所在的地方。
+  container.querySelector("#event-detail-back").addEventListener("click", () => {
+    history.back();
+  });
 }

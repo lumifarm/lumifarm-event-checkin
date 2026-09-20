@@ -13,7 +13,8 @@ import {
   rejectCancellation,
 } from "../events.js";
 import { listAllUsers } from "../tickets.js";
-import { buildPreEventNotice, buildMailtoLink } from "../notices.js";
+import { buildPreEventNotice, buildGmailComposeLink } from "../notices.js";
+import { EVENT_TAGS, renderTagBadgesHtml } from "../tags.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -105,6 +106,18 @@ export function renderAdmin(container) {
               <input id="ev-maxcap" type="number" min="1" class="w-full border rounded-lg p-2" />
             </div>
             <div>
+              <label class="text-sm text-gray-600 block mb-1">活動標籤（可複選）</label>
+              <div id="ev-tags" class="flex flex-wrap gap-3 text-sm">
+                ${EVENT_TAGS.map(
+                  (t) => `
+                  <label class="inline-flex items-center gap-1 border rounded-full px-3 py-1 cursor-pointer">
+                    <input type="checkbox" value="${t.id}" class="ev-tag-checkbox" />
+                    ${t.icon} ${t.label}
+                  </label>`
+                ).join("")}
+              </div>
+            </div>
+            <div>
               <label class="text-sm text-gray-600 block mb-1">活動海報圖片網址（選填）</label>
               <input
                 id="ev-poster-url"
@@ -113,7 +126,7 @@ export function renderAdmin(container) {
                 class="w-full border rounded-lg p-2"
               />
               <p class="text-xs text-gray-500 mt-1">
-                先把圖片上傳到 Google 相簿、雲端硬碟、Imgur 之類的地方，取得公開網址後貼在這裡。
+                把圖片交給 Claude 存進 repo 取得網址，或自己放到 Imgur 之類支援直接連結的地方，貼在這裡。
               </p>
               <img id="ev-poster-preview" class="hidden w-full max-w-xs rounded-lg border mt-2" />
             </div>
@@ -172,9 +185,9 @@ export function renderAdmin(container) {
                 <label class="text-sm text-gray-600 block mb-1">內文</label>
                 <textarea id="notice-body" rows="8" class="w-full border rounded-lg p-2"></textarea>
               </div>
-              <button type="button" id="notice-send" class="btn-primary text-sm">開啟信件並發送</button>
+              <button type="button" id="notice-send" class="btn-primary text-sm">開啟 Gmail 並發送</button>
               <p class="text-xs text-gray-500">
-                按下後會開啟你電腦的信箱軟體，收件人已用密件副本（Bcc）帶入所有報名者，確認內容後要在信箱軟體裡按送出才會真的寄出。
+                按下後會在新分頁開啟 Gmail 網頁版的寫信視窗（用你目前登入的 Gmail 帳號），收件人已用密件副本（Bcc）帶入所有報名者，確認內容後要在 Gmail 裡按送出才會真的寄出。
               </p>
             </div>
           </div>
@@ -204,6 +217,17 @@ export function renderAdmin(container) {
     posterUrl: container.querySelector("#ev-poster-url"),
   };
 
+  const tagCheckboxes = Array.from(container.querySelectorAll(".ev-tag-checkbox"));
+
+  function getCheckedTags() {
+    return tagCheckboxes.filter((cb) => cb.checked).map((cb) => cb.value);
+  }
+  function setCheckedTags(tagIds = []) {
+    tagCheckboxes.forEach((cb) => {
+      cb.checked = tagIds.includes(cb.value);
+    });
+  }
+
   let editingEventId = null;
 
   function showPosterPreview(url) {
@@ -226,6 +250,7 @@ export function renderAdmin(container) {
     submitBtn.textContent = "新增活動";
     cancelBtn.classList.add("hidden");
     showPosterPreview(null);
+    setCheckedTags([]);
   }
 
   function startEdit(ev) {
@@ -239,6 +264,7 @@ export function renderAdmin(container) {
     fields.maxCap.value = ev.maxCap || "";
     fields.posterUrl.value = ev.posterUrl || "";
     showPosterPreview(ev.posterUrl || null);
+    setCheckedTags(ev.tags || []);
     formTitleEl.textContent = `編輯活動：${ev.title || ""}`;
     submitBtn.textContent = "儲存變更";
     cancelBtn.classList.remove("hidden");
@@ -257,6 +283,7 @@ export function renderAdmin(container) {
       price: Number(fields.price.value) || 0,
       maxCap: fields.maxCap.value.trim() === "" ? null : Number(fields.maxCap.value),
       posterUrl: fields.posterUrl.value.trim() || null,
+      tags: getCheckedTags(),
     };
     if (!data.title || !data.date) {
       alert("請填寫活動名稱與日期時間");
@@ -299,6 +326,12 @@ export function renderAdmin(container) {
     detail.className = "text-sm text-gray-500";
     detail.textContent = `${formatDate(ev.date)} · ${ev.location || ""} · 名額 ${ev.currentCount || 0}/${ev.maxCap || "不限"}`;
     info.append(title, detail);
+    if (ev.tags && ev.tags.length > 0) {
+      const tagsEl = document.createElement("div");
+      tagsEl.className = "flex flex-wrap gap-1 mt-1";
+      tagsEl.innerHTML = renderTagBadgesHtml(ev.tags);
+      info.appendChild(tagsEl);
+    }
 
     const btnRow = document.createElement("div");
     btnRow.className = "flex gap-3 shrink-0";
@@ -534,11 +567,12 @@ export function renderAdmin(container) {
   });
 
   noticeSendBtn.addEventListener("click", () => {
-    window.location.href = buildMailtoLink({
+    const url = buildGmailComposeLink({
       bcc: noticeEmails.join(","),
       subject: noticeSubjectInput.value,
       body: noticeBodyInput.value,
     });
+    window.open(url, "_blank");
   });
 
   const unsubscribe = onAuthStateChanged(auth, async (user) => {

@@ -51,6 +51,22 @@
   background-color: #fee2e2;
   color: #b91c1c;
 }
+.badge-tag-amber {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+.badge-tag-purple {
+  background-color: #ede9fe;
+  color: #6d28d9;
+}
+.badge-tag-green {
+  background-color: #d1fae5;
+  color: #047857;
+}
+.badge-tag-blue {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
 
 .btn-danger {
   background-color: #dc2626;

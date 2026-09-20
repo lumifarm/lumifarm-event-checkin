@@ -2,6 +2,7 @@ import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { listEvents, registerForEvent, getMyTicketForEvent } from "../events.js";
 import { paymentStatusLabel } from "../tickets.js";
+import { renderTagBadgesHtml } from "../tags.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -67,6 +68,7 @@ export function renderEvents(container) {
             <h3 class="text-lg font-bold text-gray-800">
               <a href="#/event?id=${ev.id}" class="hover:underline">${ev.title || ""}</a>
             </h3>
+            ${ev.tags && ev.tags.length > 0 ? `<div class="flex flex-wrap gap-1">${renderTagBadgesHtml(ev.tags)}</div>` : ""}
             <p class="text-sm text-gray-500">${formatDate(ev.date)} · ${ev.location || ""}</p>
             <p class="text-sm text-gray-600 flex-1">${ev.description || ""}</p>
             <div class="flex items-center justify-between text-sm text-gray-500">
