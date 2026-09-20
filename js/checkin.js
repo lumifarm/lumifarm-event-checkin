@@ -2,7 +2,7 @@ import { db, auth } from "./firebase-config.js";
 import {
   doc,
   getDoc,
-  updateDoc,
+  writeBatch,
   serverTimestamp,
   increment,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
@@ -39,16 +39,21 @@ export async function processScannedTicket(decodedText) {
     throw new Error("這張票券已經報到過了");
   }
 
-  const userSnap = await getDoc(doc(db, "users", ticket.userId));
+  const userRef = doc(db, "users", ticket.userId);
+  const userSnap = await getDoc(userRef);
   const userName = userSnap.exists() ? userSnap.data().name : "未知使用者";
 
-  await updateDoc(ticketRef, {
+  // 用 batch 把「標記已報到」與「出席次數 +1」包成同一次原子寫入，
+  // 避免其中一個成功、另一個因網路問題失敗，導致資料不一致。
+  const batch = writeBatch(db);
+  batch.update(ticketRef, {
     isCheckedIn: true,
     checkedInAt: serverTimestamp(),
   });
-  await updateDoc(doc(db, "users", ticket.userId), {
+  batch.update(userRef, {
     attendedEvents: increment(1),
   });
+  await batch.commit();
 
   return { userName, eventId: ticket.eventId };
 }

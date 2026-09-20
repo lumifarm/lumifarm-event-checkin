@@ -12,14 +12,27 @@ const resultEl = document.getElementById("scan-result");
 let html5QrCode;
 let isProcessing = false;
 
+// 使用 textContent 而非 innerHTML：userName 來自參加者自己的 Google 顯示名稱，
+// 屬於不可信任的使用者輸入，若用 innerHTML 拼接會讓惡意使用者能在主辦方（admin）
+// 的瀏覽器分頁裡執行任意程式碼。
+function showResult(message, isSuccess) {
+  resultEl.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = `p-4 rounded-lg font-bold ${
+    isSuccess ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
+  }`;
+  div.textContent = message;
+  resultEl.appendChild(div);
+}
+
 async function onScanSuccess(decodedText) {
   if (isProcessing) return;
   isProcessing = true;
   try {
     const { userName } = await processScannedTicket(decodedText);
-    resultEl.innerHTML = `<div class="p-4 rounded-lg bg-emerald-100 text-emerald-800 font-bold">✅ 報到成功：${userName}</div>`;
+    showResult(`✅ 報到成功：${userName}`, true);
   } catch (e) {
-    resultEl.innerHTML = `<div class="p-4 rounded-lg bg-red-100 text-red-800 font-bold">❌ ${e.message}</div>`;
+    showResult(`❌ ${e.message}`, false);
   } finally {
     setTimeout(() => {
       isProcessing = false;

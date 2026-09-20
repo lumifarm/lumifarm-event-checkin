@@ -82,5 +82,7 @@ async function render() {
   });
 }
 
+// 只靠 onAuthStateChanged 觸發渲染：Firebase 在頁面載入時一定會先呼叫一次
+// 這個 callback（帶著已還原的登入狀態），不需要再額外呼叫 render()，
+// 否則會先用「尚未登入」畫面渲染一次、狀態還原後又整個重畫一次。
 onAuthStateChanged(auth, () => render());
-render();

@@ -2,9 +2,9 @@ import { db, auth } from "./firebase-config.js";
 import {
   collection,
   getDocs,
+  getDoc,
   doc,
   query,
-  where,
   orderBy,
   runTransaction,
   serverTimestamp,
@@ -17,14 +17,18 @@ export async function listEvents() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+// 票券 ID 固定用「活動ID_使用者ID」，而不是隨機 ID：
+// 這樣同一個人對同一場活動最多只會有一份文件，重複報名的檢查可以直接在
+// transaction 裡對這一份文件做 get，Firestore 會保證交易之間不會互相踩到，
+// 徹底避免兩個分頁/兩次快速點擊造成重複報名。
+function ticketDocId(eventId, uid) {
+  return `${eventId}_${uid}`;
+}
+
 export async function getMyTicketForEvent(uid, eventId) {
-  const q = query(
-    collection(db, "tickets"),
-    where("userId", "==", uid),
-    where("eventId", "==", eventId)
-  );
-  const snap = await getDocs(q);
-  return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+  const ref = doc(db, "tickets", ticketDocId(eventId, uid));
+  const snap = await getDoc(ref);
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
 function randomSecurityCode() {
@@ -35,22 +39,24 @@ function randomSecurityCode() {
     .toUpperCase();
 }
 
-// 報名活動：交易內先檢查名額，再同時建立票券、活動人數 +1、個人總報名次數 +1
+// 報名活動：交易內先檢查是否已報名過、再檢查名額，最後同時建立票券、
+// 活動人數 +1、個人總報名次數 +1，全部在同一個 transaction 內完成
 export async function registerForEvent(eventId) {
   const user = auth.currentUser;
   if (!user) throw new Error("請先登入");
 
-  const existing = await getMyTicketForEvent(user.uid, eventId);
-  if (existing) throw new Error("你已經報名過這個活動了");
-
   const eventRef = doc(db, "events", eventId);
-  const ticketRef = doc(collection(db, "tickets"));
+  const ticketRef = doc(db, "tickets", ticketDocId(eventId, user.uid));
   const userRef = doc(db, "users", user.uid);
   const securityCode = randomSecurityCode();
 
   await runTransaction(db, async (tx) => {
     const eventSnap = await tx.get(eventRef);
     if (!eventSnap.exists()) throw new Error("活動不存在");
+
+    const ticketSnap = await tx.get(ticketRef);
+    if (ticketSnap.exists()) throw new Error("你已經報名過這個活動了");
+
     const event = eventSnap.data();
     const currentCount = event.currentCount || 0;
     if (event.maxCap && currentCount >= event.maxCap) {
