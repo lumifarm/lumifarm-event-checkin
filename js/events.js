@@ -31,6 +31,22 @@ export async function listEvents() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+// 給「行前通知」用：某活動目前所有還算數的報名者（排除已取消）的 email，
+// 已取消的票券不算數，因為那些人已經不會來了。
+export async function listActiveParticipantEmails(eventId) {
+  const q = query(collection(db, "tickets"), where("eventId", "==", eventId));
+  const snap = await getDocs(q);
+  const tickets = snap.docs.map((d) => d.data()).filter((t) => !t.isCancelled);
+
+  const emails = await Promise.all(
+    tickets.map(async (t) => {
+      const userSnap = await getDoc(doc(db, "users", t.userId));
+      return userSnap.exists() ? userSnap.data().email : null;
+    })
+  );
+  return [...new Set(emails.filter(Boolean))];
+}
+
 // 給主辦專區的活動管理用：Firestore 規則只允許 isAdmin() 呼叫這三個函式，
 // 一般使用者呼叫會被規則擋下來，不需要在這裡另外檢查權限。
 export async function createEvent(data) {

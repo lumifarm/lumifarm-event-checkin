@@ -64,7 +64,9 @@ export function renderEvents(container) {
         return `
           <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-3">
             ${posterHtml}
-            <h3 class="text-lg font-bold text-gray-800">${ev.title || ""}</h3>
+            <h3 class="text-lg font-bold text-gray-800">
+              <a href="#/event?id=${ev.id}" class="hover:underline">${ev.title || ""}</a>
+            </h3>
             <p class="text-sm text-gray-500">${formatDate(ev.date)} · ${ev.location || ""}</p>
             <p class="text-sm text-gray-600 flex-1">${ev.description || ""}</p>
             <div class="flex items-center justify-between text-sm text-gray-500">

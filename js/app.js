@@ -6,6 +6,7 @@ import { renderCheckin } from "./views/checkin-view.js";
 import { renderAdmin } from "./views/admin-view.js";
 import { renderReview } from "./views/review-view.js";
 import { renderOnboarding } from "./views/onboarding-view.js";
+import { renderEventDetail } from "./views/event-detail-view.js";
 
 initNavbar();
 
@@ -15,6 +16,7 @@ registerRoute("/checkin", renderCheckin);
 registerRoute("/admin", renderAdmin);
 registerRoute("/review", renderReview);
 registerRoute("/onboarding", renderOnboarding);
+registerRoute("/event", renderEventDetail);
 
 window.addEventListener("hashchange", renderRoute);
 renderRoute();

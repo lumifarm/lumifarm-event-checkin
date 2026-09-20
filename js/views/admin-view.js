@@ -7,11 +7,13 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
+  listActiveParticipantEmails,
   listPendingCancellations,
   approveCancellation,
   rejectCancellation,
 } from "../events.js";
 import { listAllUsers } from "../tickets.js";
+import { buildPreEventNotice, buildMailtoLink } from "../notices.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -140,6 +142,42 @@ export function renderAdmin(container) {
         <section>
           <h2 class="text-lg font-bold text-gray-800 mb-3">會員總覽</h2>
           <div id="user-overview" class="bg-white rounded-xl shadow overflow-x-auto"></div>
+        </section>
+
+        <section>
+          <h2 class="text-lg font-bold text-gray-800 mb-3">行前通知</h2>
+          <div class="bg-white rounded-xl shadow p-5 space-y-3">
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">選擇活動</label>
+              <select id="notice-event" class="w-full border rounded-lg p-2"></select>
+            </div>
+            <p id="notice-recipient-count" class="text-sm text-gray-500"></p>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">通知內容</label>
+              <textarea
+                id="notice-message"
+                rows="4"
+                class="w-full border rounded-lg p-2"
+                placeholder="例如：請記得帶雨具與換洗衣物，活動當天請提早 10 分鐘到場報到"
+              ></textarea>
+            </div>
+            <button type="button" id="notice-generate" class="btn-primary text-sm">產生郵件內容</button>
+
+            <div id="notice-preview" class="hidden space-y-2 border-t pt-3">
+              <div>
+                <label class="text-sm text-gray-600 block mb-1">主旨</label>
+                <input id="notice-subject" type="text" class="w-full border rounded-lg p-2" />
+              </div>
+              <div>
+                <label class="text-sm text-gray-600 block mb-1">內文</label>
+                <textarea id="notice-body" rows="8" class="w-full border rounded-lg p-2"></textarea>
+              </div>
+              <button type="button" id="notice-send" class="btn-primary text-sm">開啟信件並發送</button>
+              <p class="text-xs text-gray-500">
+                按下後會開啟你電腦的信箱軟體，收件人已用密件副本（Bcc）帶入所有報名者，確認內容後要在信箱軟體裡按送出才會真的寄出。
+              </p>
+            </div>
+          </div>
         </section>
       </div>
     </div>`;
@@ -431,6 +469,78 @@ export function renderAdmin(container) {
     userOverviewEl.appendChild(table);
   }
 
+  const noticeEventSelect = container.querySelector("#notice-event");
+  const noticeRecipientCount = container.querySelector("#notice-recipient-count");
+  const noticeMessage = container.querySelector("#notice-message");
+  const noticeGenerateBtn = container.querySelector("#notice-generate");
+  const noticePreview = container.querySelector("#notice-preview");
+  const noticeSubjectInput = container.querySelector("#notice-subject");
+  const noticeBodyInput = container.querySelector("#notice-body");
+  const noticeSendBtn = container.querySelector("#notice-send");
+
+  let noticeEventsCache = [];
+  let noticeEmails = [];
+
+  async function updateRecipientCount() {
+    const eventId = noticeEventSelect.value;
+    if (!eventId) {
+      noticeRecipientCount.textContent = "";
+      return;
+    }
+    noticeRecipientCount.textContent = "計算收件人數中...";
+    noticeEmails = await listActiveParticipantEmails(eventId);
+    noticeRecipientCount.textContent = `此活動目前有 ${noticeEmails.length} 位報名者（不含已取消）`;
+  }
+
+  async function populateNoticeEventSelect() {
+    noticeEventsCache = await listEvents();
+    noticeEventSelect.innerHTML = noticeEventsCache
+      .map((ev) => `<option value="${ev.id}">${ev.title || "（未命名活動）"}</option>`)
+      .join("");
+    updateRecipientCount();
+  }
+
+  noticeEventSelect.addEventListener("change", () => {
+    noticePreview.classList.add("hidden");
+    updateRecipientCount();
+  });
+
+  noticeGenerateBtn.addEventListener("click", async () => {
+    const ev = noticeEventsCache.find((e) => e.id === noticeEventSelect.value);
+    if (!ev) {
+      alert("請先選擇活動");
+      return;
+    }
+    if (!noticeMessage.value.trim()) {
+      alert("請輸入通知內容");
+      return;
+    }
+
+    await updateRecipientCount();
+    if (noticeEmails.length === 0) {
+      alert("這個活動目前沒有任何有效報名者（可能都取消了），沒有收件人可以寄送。");
+      return;
+    }
+
+    const { subject, body } = buildPreEventNotice({
+      eventTitle: ev.title || "",
+      eventDateText: formatDate(ev.date),
+      eventLocation: ev.location || "",
+      customMessage: noticeMessage.value,
+    });
+    noticeSubjectInput.value = subject;
+    noticeBodyInput.value = body;
+    noticePreview.classList.remove("hidden");
+  });
+
+  noticeSendBtn.addEventListener("click", () => {
+    window.location.href = buildMailtoLink({
+      bcc: noticeEmails.join(","),
+      subject: noticeSubjectInput.value,
+      body: noticeBodyInput.value,
+    });
+  });
+
   const unsubscribe = onAuthStateChanged(auth, async (user) => {
     if (!user) {
       adminGate.textContent = "請先登入。";
@@ -453,6 +563,7 @@ export function renderAdmin(container) {
     renderPendingPayments();
     renderPendingCancellations();
     renderUsersOverview();
+    populateNoticeEventSelect();
   });
 
   return () => unsubscribe();

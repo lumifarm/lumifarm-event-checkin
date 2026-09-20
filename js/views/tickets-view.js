@@ -175,7 +175,9 @@ export function renderTickets(container) {
     if (t.isCancelled) {
       return `
       <div class="bg-white rounded-xl shadow p-5 opacity-75">
-        <h3 class="font-bold text-gray-800">${t.event?.title || "活動已刪除"}</h3>
+        <h3 class="font-bold text-gray-800">${
+          t.event ? `<a href="#/event?id=${t.eventId}" class="hover:underline">${t.event.title || ""}</a>` : "活動已刪除"
+        }</h3>
         <p class="text-sm text-gray-500">${formatDate(t.event?.date)} · ${t.event?.location || ""}</p>
         <div class="flex flex-wrap gap-2 mt-2">
           <span class="badge badge-red">已取消</span>
@@ -200,7 +202,9 @@ export function renderTickets(container) {
       <div class="bg-white rounded-xl shadow p-5 flex flex-col md:flex-row gap-4 items-start">
         <div id="qr-${t.id}" class="shrink-0"></div>
         <div class="flex-1 w-full">
-          <h3 class="font-bold text-gray-800">${t.event?.title || "活動已刪除"}</h3>
+          <h3 class="font-bold text-gray-800">${
+            t.event ? `<a href="#/event?id=${t.eventId}" class="hover:underline">${t.event.title || ""}</a>` : "活動已刪除"
+          }</h3>
           <p class="text-sm text-gray-500">${formatDate(t.event?.date)} · ${t.event?.location || ""}</p>
           <div class="flex flex-wrap gap-2 mt-2">
             <span class="badge ${pay.cls}">${pay.text}</span>
