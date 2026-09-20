@@ -3,6 +3,9 @@ import {
   collection,
   getDocs,
   getDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
   doc,
   query,
   orderBy,
@@ -15,6 +18,35 @@ export async function listEvents() {
   const q = query(collection(db, "events"), orderBy("date", "asc"));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// 給主辦專區的活動管理用：Firestore 規則只允許 isAdmin() 呼叫這三個函式，
+// 一般使用者呼叫會被規則擋下來，不需要在這裡另外檢查權限。
+export async function createEvent(data) {
+  return addDoc(collection(db, "events"), {
+    title: data.title,
+    description: data.description || "",
+    location: data.location || "",
+    date: data.date,
+    price: data.price || 0,
+    maxCap: data.maxCap ?? null,
+    currentCount: 0,
+  });
+}
+
+export async function updateEvent(eventId, data) {
+  await updateDoc(doc(db, "events", eventId), {
+    title: data.title,
+    description: data.description || "",
+    location: data.location || "",
+    date: data.date,
+    price: data.price || 0,
+    maxCap: data.maxCap ?? null,
+  });
+}
+
+export async function deleteEvent(eventId) {
+  await deleteDoc(doc(db, "events", eventId));
 }
 
 // 票券 ID 固定用「活動ID_使用者ID」，而不是隨機 ID：
