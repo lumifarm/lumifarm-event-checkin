@@ -7,26 +7,32 @@
 - **Google 登入 + 個資自動帶入**：使用 Firebase Authentication 的 Google 登入，登入後自動在 Firestore 建立會員資料，之後報名不需要重複填寫姓名、Email。
 - **活動瀏覽與報名**：首頁列出所有活動，登入後可直接報名，系統會檢查名額上限並記錄繳費狀態（未繳費／已繳費）。
 - **我的票券 + QR Code**：報名成功後在「我的票券」頁面看到專屬 QR Code（內含 Ticket ID 與安全驗證碼）。
-- **現場報到掃描**：主辦方登入「報到管理」頁面，用手機鏡頭掃描參加者的 QR Code，系統驗證後自動把該筆票券標記為已報到。
+- **現場報到掃描**：主辦方在「報到管理」頁面用手機鏡頭掃描參加者的 QR Code，系統驗證後自動把該筆票券標記為已報到。
+- **主辦專區**：主辦方核對匯款後，在「主辦專區」把待確認的繳費標記為已繳費。
 - **評價與出席率**：活動報到後即可填寫星級評價與文字回饋；個人中心會顯示總報名次數、實際出席次數與出席率。
+- **新手教學**：第一次造訪網站會彈出引導視窗，帶去「新手教學」頁面說明整個使用流程。
+
+## 架構
+
+整個網站是單頁應用（SPA）：只有 `index.html` 一個真正的頁面，導覽列只渲染一次，切換「活動列表 / 我的票券 / 報到管理 / 主辦專區 / 新手教學」時只是用網址 hash（例如 `#/tickets`）換掉 `<main id="app">` 裡面的內容，不會整頁重新載入、導覽列也不會閃爍或重畫。`my-tickets.html`、`checkin.html`、`admin.html`、`review.html` 還留著，但只是轉址到對應的 hash 路由，讓舊的書籤或分享連結不會失效。
 
 ## 檔案結構
 
 ```
-index.html            首頁：活動列表 + 報名
-my-tickets.html        個人中心：會員資料、出席統計、我的票券（含 QR Code）
-checkin.html            報到管理頁面（主辦方用，需要掃碼權限）
-review.html             活動評價頁面
-css/style.css           補充樣式
-js/firebase-config.js   Firebase 初始化設定（需要換成你自己的專案設定）
-js/auth.js              Google 登入/登出、自動建立會員資料
-js/nav.js               共用導覽列邏輯
-js/events.js            活動列表、報名邏輯（Firestore transaction）
-js/tickets.js           我的票券、QR Code 產生、出席率計算
-js/checkin.js           報到掃描驗證與更新邏輯
-js/reviews.js           送出活動評價
-js/page-*.js            各頁面的進入點腳本
-firestore.rules         Firestore 安全性規則
+index.html                首頁殼層：導覽列 + <main id="app">，實際內容由 JS 路由填入
+css/style.css             補充樣式
+js/app.js                 進入點：初始化導覽列、註冊路由、首次造訪彈跳視窗
+js/router.js              極簡 hash 路由器，切換路由前會呼叫上個畫面的 cleanup
+js/firebase-config.js     Firebase 初始化設定（需要換成你自己的專案設定）
+js/auth.js                Google 登入/登出、自動建立會員資料
+js/nav.js                 共用導覽列邏輯（只在 app.js 執行一次）
+js/events.js              活動列表、報名邏輯（Firestore transaction）
+js/tickets.js             我的票券、QR Code 產生、出席率計算
+js/checkin.js             報到掃描驗證與更新邏輯
+js/payment.js             匯款資訊、繳費通知、主辦方確認收款
+js/reviews.js             送出活動評價
+js/views/*.js             各路由畫面：把 HTML 畫進傳入的容器、回傳 cleanup 函式
+firestore.rules           Firestore 安全性規則
 ```
 
 ## Firestore 資料結構
@@ -67,7 +73,7 @@ firestore.rules         Firestore 安全性規則
    Firestore Database → Rules 分頁 → 把本專案 `firestore.rules` 的內容整份貼上 → Publish。
 
 6. **設定主辦方帳號（admins collection）**
-   用你自己的 Google 帳號登入網站一次，讓 `users` collection 產生你的 uid（在 Authentication → Users 分頁可以查到 uid）。接著到 Firestore Database → Start collection → Collection ID 填 `admins` → 文件 ID 貼上你的 uid → 隨意加一個欄位（例如 `role: "organizer"`）→ 儲存。這個帳號之後就能使用「報到管理」頁面。
+   用你自己的 Google 帳號登入網站一次，讓 `users` collection 產生你的 uid（在 Authentication → Users 分頁可以查到 uid）。接著到 Firestore Database → Start collection → Collection ID 填 `admins` → 文件 ID 貼上你的 uid → 隨意加一個欄位（例如 `role: "organizer"`）→ 儲存。這個帳號之後就能使用「報到管理」與「主辦專區」頁面。
 
 7. **建立活動**
    在 Firestore Database 新增 collection `events`，每個文件代表一個活動，欄位請依照上面的資料結構表建立，`date` 記得選 Timestamp 型別，`currentCount` 初始值填 `0`。
