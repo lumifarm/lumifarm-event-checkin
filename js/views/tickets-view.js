@@ -5,6 +5,7 @@ import { BANK_INFO, submitPaymentNotice } from "../payment.js";
 import { requestCancellation, calcRefundPercent } from "../events.js";
 import { getMyPointsBalance, getMyPointsHistory } from "../workPoints.js";
 import { getMyCoupons, DISCOUNT_PERCENT } from "../discounts.js";
+import { notifyAdmin } from "../notify.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -140,10 +141,11 @@ export function renderTickets(container) {
   const historyList = container.querySelector("#ticket-history-list");
   const loginPrompt = container.querySelector("#login-prompt");
 
-  function wirePaymentButtons(user) {
+  function wirePaymentButtons(tickets, user) {
     ticketList.querySelectorAll(".btn-pay-notify").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const ticketId = btn.dataset.ticketId;
+        const ticket = tickets.find((t) => t.id === ticketId);
         const noteInput = ticketList.querySelector(`#note-${ticketId}`);
         const note = noteInput ? noteInput.value.trim() : "";
 
@@ -152,6 +154,15 @@ export function renderTickets(container) {
         try {
           await submitPaymentNotice(ticketId, note);
           alert("已記錄你的匯款通知，狀態改為「待確認中」，主辦方會在主辦專區看到你填寫的後五碼並核對，不用另外寄信。");
+          // 通知只是提醒主辦方去看後台，失敗也不影響已經成功送出的繳費通知，
+          // 所以特意不 await、不擋住後面的畫面更新。
+          notifyAdmin({
+            noticeType: "會員回報已完成匯款，待確認",
+            eventTitle: ticket?.event?.title,
+            memberName: user.displayName,
+            memberEmail: user.email,
+            detail: `匯款後五碼／備註：${note || "（未填寫）"}`,
+          });
           render(user);
         } catch (e) {
           alert("通知失敗：" + e.message);
@@ -177,6 +188,13 @@ export function renderTickets(container) {
           refundPercent,
           onConfirm: async () => {
             await requestCancellation(ticket.id);
+            notifyAdmin({
+              noticeType: "會員申請取消報名，待審核",
+              eventTitle: ticket.event?.title,
+              memberName: user.displayName,
+              memberEmail: user.email,
+              detail: `依目前時間試算的退款比例：${refundPercent}%`,
+            });
             render(user);
           },
         });
@@ -373,7 +391,7 @@ export function renderTickets(container) {
       if (el) renderTicketQRCode(el, t);
     });
 
-    wirePaymentButtons(user);
+    wirePaymentButtons(activeTickets, user);
     wireCancelButtons(activeTickets, user);
   }
 

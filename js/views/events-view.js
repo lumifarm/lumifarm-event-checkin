@@ -5,6 +5,7 @@ import { paymentStatusLabel } from "../tickets.js";
 import { renderTagBadgesHtml, EVENT_TAGS } from "../tags.js";
 import { getMyProfile, isProfileComplete } from "../profile.js";
 import { getMyCoupons } from "../discounts.js";
+import { notifyAdmin } from "../notify.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -165,6 +166,18 @@ export function renderEvents(container) {
           try {
             await registerForEvent(eventId, answer);
             alert("報名成功！接下來請完成繳費。");
+            // 免費活動報名當下就直接算已繳費，這裡才需要通知主辦方；付費活動
+            // 要等會員實際送出繳費通知才算「已繳費」，通知會在那個時候發，
+            // 不然一報名就寄信，主辦方還沒真的收到錢就會被通知洗版。
+            if (!ev.price || ev.price <= 0) {
+              notifyAdmin({
+                noticeType: "新報名（免費活動，已自動完成繳費）",
+                eventTitle: ev.title,
+                memberName: cachedUser?.displayName,
+                memberEmail: cachedUser?.email,
+                detail: "",
+              });
+            }
             location.hash = "#/tickets";
           } catch (e) {
             if (e instanceof ProfileIncompleteError) {
