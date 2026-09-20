@@ -136,6 +136,7 @@ export function renderTickets(container) {
         btn.textContent = "處理中...";
         try {
           await submitPaymentNotice(ticketId, note);
+          alert("已記錄你的匯款通知，狀態改為「待確認中」。接下來會嘗試開啟你的信箱軟體通知主辦方，如果沒有反應也沒關係，狀態已經更新成功了。");
           window.location.href = buildPaymentMailto({
             userName: user.displayName || "",
             userEmail: user.email || "",
