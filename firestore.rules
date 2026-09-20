@@ -41,8 +41,11 @@ service cloud.firestore {
 
     // 報名票券：本人與主辦方可讀；本人建立自己的票券、只能改繳費狀態；報到狀態只能由主辦方更新
     match /tickets/{ticketId} {
+      // resource == null 代表這份票券根本不存在（例如查詢「我是否已報名某活動」時）。
+      // 一定要先擋掉這個情況再去讀 resource.data，不然對不存在的文件做 get()
+      // 會因為 resource 是 null 而讓整條規則判定失敗，變成登入後任何讀取都被擋。
       allow read: if isSignedIn() &&
-        (resource.data.userId == request.auth.uid || isAdmin());
+        (resource == null || resource.data.userId == request.auth.uid || isAdmin());
 
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid &&
