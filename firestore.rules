@@ -86,13 +86,18 @@ service cloud.firestore {
             .hasOnly(['cancelRequestStatus', 'cancelRequestedAt', 'cancelRefundPercent']) &&
           request.resource.data.cancelRequestStatus == 'pending') ||
         // 本人針對「先前取消過的同一張票券」重新報名：整份重置回剛報名的狀態，
-        // 但活動不能被換成別的（eventId 必須不變）。
+        // 但活動不能被換成別的（eventId 必須不變）。跟上面的 create 規則一樣，
+        // 免費活動可以直接是 paid，一樣要用 get() 查真正的活動價格做確認。
         (ticketOwnedByCaller() && resource.data.get('isCancelled', false) == true &&
           request.resource.data.userId == request.auth.uid &&
           request.resource.data.eventId == resource.data.eventId &&
           request.resource.data.isCheckedIn == false &&
           request.resource.data.isCancelled == false &&
-          request.resource.data.paymentStatus == 'unpaid');
+          (
+            request.resource.data.paymentStatus == 'unpaid' ||
+            (request.resource.data.paymentStatus == 'paid' &&
+              get(/databases/$(database)/documents/events/$(request.resource.data.eventId)).data.get('price', 0) == 0)
+          ));
 
       allow delete: if false;
     }
