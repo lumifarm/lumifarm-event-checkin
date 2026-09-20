@@ -77,7 +77,7 @@ function showCancelModal({ eventTitle, daysLeft, refundPercent, onConfirm }) {
   overlay.className = "fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50";
 
   const box = document.createElement("div");
-  box.className = "bg-white rounded-xl shadow-lg max-w-md w-full p-6";
+  box.className = "card rounded-xl max-w-md w-full p-6";
   box.innerHTML = `
     <h2 class="text-lg font-bold text-gray-800 mb-2">活動取消須知</h2>
     <p class="text-sm text-gray-700 mb-2">活動：${eventTitle}</p>
@@ -127,7 +127,7 @@ export function renderTickets(container) {
     <div class="max-w-3xl mx-auto">
       <p id="login-prompt" class="hidden text-center text-gray-500 py-16">請先使用 Google 登入以查看你的個人中心與票券。</p>
       <section id="profile-section" class="hidden mb-8"></section>
-      <h2 class="text-xl font-bold text-gray-800 mb-3">我的票券</h2>
+      <h2 class="text-xl font-bold text-gray-800 mb-3">🎫 我的票券</h2>
       <div id="ticket-list" class="hidden space-y-4"></div>
 
       <h2 id="ticket-history-heading" class="hidden text-xl font-bold text-gray-500 mt-10 mb-3">已結束或已取消的活動</h2>
@@ -187,7 +187,7 @@ export function renderTickets(container) {
   function ticketCardHtml(t, isPast) {
     if (t.isCancelled) {
       return `
-      <div class="bg-white rounded-xl shadow p-5 opacity-75">
+      <div class="card rounded-xl p-5 opacity-75">
         <h3 class="font-bold text-gray-800">${
           t.event ? `<a href="#/event?id=${t.eventId}" class="hover:underline">${t.event.title || ""}</a>` : "活動已刪除"
         }</h3>
@@ -222,7 +222,7 @@ export function renderTickets(container) {
         : "";
 
     return `
-      <div class="bg-white rounded-xl shadow p-5 flex flex-col md:flex-row gap-4 items-start">
+      <div class="card rounded-xl p-5 flex flex-col md:flex-row gap-4 items-start">
         <div id="qr-${t.id}" class="shrink-0"></div>
         <div class="flex-1 w-full">
           <h3 class="font-bold text-gray-800">${
@@ -286,27 +286,27 @@ export function renderTickets(container) {
         </div>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-6 gap-3 mt-4 text-center">
-        <div class="bg-white rounded-lg shadow p-3">
+        <div class="card rounded-lg p-3">
           <p class="text-2xl font-bold text-emerald-600">${stats.total}</p>
           <p class="text-xs text-gray-500">總報名次數</p>
         </div>
-        <div class="bg-white rounded-lg shadow p-3">
+        <div class="card rounded-lg p-3">
           <p class="text-2xl font-bold text-emerald-600">${stats.attended}</p>
           <p class="text-xs text-gray-500">實際出席次數</p>
         </div>
-        <div class="bg-white rounded-lg shadow p-3">
+        <div class="card rounded-lg p-3">
           <p class="text-2xl font-bold text-emerald-600">${stats.cancelled}</p>
           <p class="text-xs text-gray-500">取消次數</p>
         </div>
-        <div class="bg-white rounded-lg shadow p-3">
+        <div class="card rounded-lg p-3">
           <p class="text-2xl font-bold text-emerald-600">${stats.rate}%</p>
           <p class="text-xs text-gray-500">出席率</p>
         </div>
-        <div class="bg-white rounded-lg shadow p-3">
+        <div class="card rounded-lg p-3">
           <p class="text-2xl font-bold text-lime-700">${pointsBalance}</p>
           <p class="text-xs text-gray-500">換工點數</p>
         </div>
-        <div class="bg-white rounded-lg shadow p-3">
+        <div class="card rounded-lg p-3">
           <p class="text-2xl font-bold text-amber-600">${unusedCouponCount}</p>
           <p class="text-xs text-gray-500">可用折扣券</p>
         </div>
@@ -318,7 +318,7 @@ export function renderTickets(container) {
       }
       <details class="mt-2">
         <summary class="text-sm text-gray-500 cursor-pointer">換工點數紀錄</summary>
-        <ul class="text-sm mt-2 bg-white rounded-lg shadow p-3 divide-y">${pointsHistoryHtml}</ul>
+        <ul class="text-sm mt-2 card rounded-lg p-3 divide-y">${pointsHistoryHtml}</ul>
       </details>`;
 
     const tickets = await getMyTickets();

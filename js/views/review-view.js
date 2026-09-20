@@ -17,9 +17,9 @@ export function renderReview(container) {
 
   container.innerHTML = `
     <div class="max-w-md mx-auto">
-      <h1 class="text-xl font-bold text-gray-800 my-4">活動評價：<span id="review-event-title"></span></h1>
+      <h1 class="text-xl font-bold text-gray-800 my-4">🌼 活動評價：<span id="review-event-title"></span></h1>
       <p id="login-prompt" class="hidden text-center text-gray-500 py-16">請先登入以填寫評價。</p>
-      <form id="review-form" class="hidden bg-white rounded-xl shadow p-5 space-y-4">
+      <form id="review-form" class="hidden card rounded-xl p-5 space-y-4">
         <div>
           <p class="text-sm text-gray-600 mb-2">請給予星級評分：</p>
           <div class="flex gap-1 text-3xl">

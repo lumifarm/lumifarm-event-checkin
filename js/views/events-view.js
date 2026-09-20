@@ -20,7 +20,10 @@ function eventDateOf(ev) {
 export function renderEvents(container) {
   container.innerHTML = `
     <div class="max-w-5xl mx-auto">
-      <h1 class="text-2xl font-bold text-gray-800 my-4">近期活動</h1>
+      <div class="hero-banner rounded-2xl p-6 sm:p-8 mb-6 text-white">
+        <h1 class="relative text-2xl sm:text-3xl font-bold mb-1">🌾 近期活動</h1>
+        <p class="relative text-sm text-white/90">在陽光與土地之間，與光農合作社群一起學習、耕作、成長</p>
+      </div>
       <div id="profile-incomplete-banner" class="hidden bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-lg p-3 mb-4">
         活動需要幫參加者投保，報名前請先<a href="#/profile" class="underline font-bold">到「資料維護」填寫真實姓名、身分證字號、出生年月日</a>。
       </div>
@@ -69,7 +72,7 @@ export function renderEvents(container) {
       : "";
 
     return `
-      <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-3 ${isPast ? "opacity-75" : ""}">
+      <div class="card rounded-xl p-5 flex flex-col gap-3 ${isPast ? "opacity-75" : ""}">
         ${posterHtml}
         <h3 class="text-lg font-bold text-gray-800">
           <a href="#/event?id=${ev.id}" class="hover:underline">${ev.title || ""}</a>
@@ -118,14 +121,14 @@ export function renderEvents(container) {
       return;
     }
 
-    const allBtn = `<button type="button" data-tag="" class="btn-tag-filter text-xs border rounded-full px-3 py-1 ${
-      activeTag === null ? "bg-emerald-600 text-white border-emerald-600" : "bg-white hover:bg-gray-100"
+    const allBtn = `<button type="button" data-tag="" class="btn-tag-filter text-xs border rounded-full px-3 py-1 transition ${
+      activeTag === null ? "bg-amber-500 text-white border-amber-500 shadow" : "bg-white hover:bg-amber-50"
     }">全部</button>`;
     const tagBtns = usableTags
       .map(
         (t) => `
-      <button type="button" data-tag="${t.id}" class="btn-tag-filter text-xs border rounded-full px-3 py-1 ${
-          activeTag === t.id ? "bg-emerald-600 text-white border-emerald-600" : "bg-white hover:bg-gray-100"
+      <button type="button" data-tag="${t.id}" class="btn-tag-filter text-xs border rounded-full px-3 py-1 transition ${
+          activeTag === t.id ? "bg-amber-500 text-white border-amber-500 shadow" : "bg-white hover:bg-amber-50"
         }">${t.icon} ${t.label}</button>`
       )
       .join("");

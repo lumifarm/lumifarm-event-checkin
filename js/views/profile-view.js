@@ -7,11 +7,11 @@ export function renderProfile(container) {
     <div class="max-w-md mx-auto">
       <p id="profile-login-prompt" class="hidden text-center text-gray-500 py-16">請先使用 Google 登入以維護個人資料。</p>
       <div id="profile-section" class="hidden">
-        <h1 class="text-2xl font-bold text-gray-800 my-4">資料維護</h1>
+        <h1 class="text-2xl font-bold text-gray-800 my-4">🪴 資料維護</h1>
         <p class="text-sm text-gray-600 mb-4">
           活動需要幫參加者辦理保險，報名前請先填寫以下真實資料。這些資料只有你自己和主辦方看得到，之後可以隨時回來這裡修改。
         </p>
-        <form id="profile-form" class="bg-white rounded-xl shadow p-5 space-y-3">
+        <form id="profile-form" class="card rounded-xl p-5 space-y-3">
           <div>
             <label class="text-sm text-gray-600 block mb-1">真實姓名</label>
             <input id="pf-realname" type="text" required class="w-full border rounded-lg p-2" />

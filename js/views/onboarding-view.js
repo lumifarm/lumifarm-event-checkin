@@ -40,7 +40,7 @@ const STEPS = [
 export function renderOnboarding(container) {
   const cards = STEPS.map(
     (s) => `
-    <div class="bg-white rounded-xl shadow p-5">
+    <div class="card rounded-xl p-5">
       <h3 class="font-bold text-gray-800 mb-1">${s.title}</h3>
       <p class="text-sm text-gray-600">${s.body}</p>
     </div>`
@@ -48,7 +48,7 @@ export function renderOnboarding(container) {
 
   container.innerHTML = `
     <div class="max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold text-gray-800 my-4">新手教學</h1>
+      <h1 class="text-2xl font-bold text-gray-800 my-4">🌱 新手教學</h1>
       <div class="space-y-4">${cards}</div>
       <div class="text-center mt-6">
         <a href="#/events" class="btn-primary inline-block">開始瀏覽活動</a>

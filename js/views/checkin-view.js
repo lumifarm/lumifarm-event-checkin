@@ -5,7 +5,7 @@ import { isCurrentUserAdmin, processScannedTicket } from "../checkin.js";
 export function renderCheckin(container) {
   container.innerHTML = `
     <div class="max-w-md mx-auto text-center">
-      <h1 class="text-xl font-bold text-gray-800 my-4">現場報到掃描</h1>
+      <h1 class="text-xl font-bold text-gray-800 my-4">📷 現場報到掃描</h1>
       <p id="admin-gate" class="hidden text-gray-500 py-8"></p>
       <div id="scanner-section" class="hidden">
         <div id="qr-reader" class="rounded-lg overflow-hidden shadow"></div>

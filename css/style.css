@@ -1,24 +1,100 @@
 /* 補充樣式：Tailwind Play CDN 不支援外部檔案的 @apply，所以這裡用純 CSS 撰寫 */
 
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap");
+
+/* 自然系配色：陽光暖黃、木頭棕、葉綠、米白，取代原本偏冷的灰白 */
+:root {
+  --color-soil: #3f3226;
+  --color-bark: #8a6339;
+  --color-bark-light: #e2d2b3;
+  --color-leaf: #2f6b3e;
+  --color-leaf-dark: #1f4d2b;
+  --color-sun: #eea23a;
+  --color-cream: #faf3e2;
+  --color-card: #fffdf7;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  color: var(--color-soil);
+  background-color: var(--color-cream);
+  /* 用幾個柔和的放射狀漸層模擬陽光穿過葉隙灑落的感覺，不用額外的圖檔 */
+  background-image: radial-gradient(circle at 10% 10%, rgba(238, 162, 58, 0.16) 0, transparent 40%),
+    radial-gradient(circle at 90% 6%, rgba(47, 107, 62, 0.14) 0, transparent 36%),
+    radial-gradient(circle at 50% 100%, rgba(138, 99, 57, 0.12) 0, transparent 45%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Noto Serif TC", "Noto Sans TC", serif;
+  color: var(--color-soil);
+}
+
+/* 導覽列：深綠漸層 + 木頭色的底邊線 */
+.site-nav {
+  background: linear-gradient(135deg, var(--color-leaf) 0%, var(--color-leaf-dark) 100%);
+  border-bottom: 3px solid var(--color-sun);
+}
+
+/* 卡片：取代原本的 bg-white + shadow，改成米白底、淡木框、暖色陰影，
+   hover 時微微浮起，整體質感更像木質看板而不是冷冰冰的白色方塊。
+   border-radius 仍然沿用各處原有的 Tailwind rounded-xl/rounded-lg class。 */
+.card {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-bark-light);
+  box-shadow: 0 3px 12px rgba(138, 99, 57, 0.14);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(138, 99, 57, 0.2);
+}
+
+/* 首頁歡迎橫幅：綠到金的漸層，模擬田野加上陽光 */
+.hero-banner {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(120deg, var(--color-leaf-dark) 0%, var(--color-leaf) 55%, var(--color-sun) 130%);
+  box-shadow: 0 8px 24px rgba(31, 77, 43, 0.25);
+}
+.hero-banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at 88% 15%, rgba(255, 255, 255, 0.28) 0, transparent 32%),
+    radial-gradient(circle at 15% 90%, rgba(255, 255, 255, 0.12) 0, transparent 30%);
+  pointer-events: none;
+}
+
 .btn-primary {
-  background-color: #059669;
+  background: linear-gradient(135deg, #379654, var(--color-leaf-dark));
   color: #fff;
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  border-radius: 9999px;
   font-weight: 700;
   border: none;
   cursor: pointer;
-  transition: background-color 0.2s;
+  box-shadow: 0 2px 8px rgba(47, 107, 62, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
 }
 .btn-primary:hover {
-  background-color: #047857;
+  background: linear-gradient(135deg, #45ab63, #276b3a);
+  box-shadow: 0 4px 14px rgba(238, 162, 58, 0.45);
+  transform: translateY(-1px);
 }
 
 .btn-disabled {
-  background-color: #e5e7eb;
-  color: #9ca3af;
+  background-color: #ece4d3;
+  color: #a99b83;
   padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
+  border-radius: 9999px;
   font-weight: 700;
   border: none;
   cursor: not-allowed;
@@ -36,7 +112,7 @@
   color: #047857;
 }
 .badge-yellow {
-  background-color: #fef9c3;
+  background-color: #fef3d6;
   color: #a16207;
 }
 .badge-blue {
@@ -44,8 +120,8 @@
   color: #1d4ed8;
 }
 .badge-gray {
-  background-color: #f3f4f6;
-  color: #4b5563;
+  background-color: #f1ece0;
+  color: #6b5d47;
 }
 .badge-red {
   background-color: #fee2e2;
@@ -77,13 +153,17 @@
 }
 
 .btn-danger {
-  background-color: #dc2626;
+  background-color: #c0432f;
   color: #fff;
   padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
+  border-radius: 9999px;
   font-weight: 700;
   border: none;
   cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.btn-danger:hover {
+  background-color: #a8371f;
 }
 
 #qr-reader video,

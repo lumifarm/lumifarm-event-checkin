@@ -9,12 +9,12 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <link rel="stylesheet" href="css/style.css" />
 </head>
-<body class="bg-gray-50 min-h-screen">
-  <nav class="bg-emerald-700 text-white shadow">
+<body class="min-h-screen">
+  <nav class="site-nav text-white shadow">
     <div class="px-4 py-3 flex items-center justify-between">
       <a href="#/events" class="font-bold text-lg flex items-center gap-2">
-        <img src="assets/logo.webp" alt="光農合作社群 logo" class="w-8 h-8 rounded-full" />
-        <span>光農合作社群-活動報名系統</span>
+        <img src="assets/logo.webp" alt="光農合作社群 logo" class="w-9 h-9 rounded-full border-2 border-amber-200/70 shadow" />
+        <span>🌱 光農合作社群-活動報名系統</span>
       </a>
       <button id="nav-toggle" type="button" class="sm:hidden text-2xl leading-none px-2" aria-label="開啟選單" aria-expanded="false">
         &#9776;
@@ -26,7 +26,7 @@
         <a href="#/admin" data-route="/admin" id="nav-link-admin" class="hidden hover:underline">主辦專區</a>
         <a href="#/faq" data-route="/faq" class="hover:underline">常見問題</a>
         <a href="#/onboarding" data-route="/onboarding" class="hover:underline">新手教學</a>
-        <button id="btn-login" class="bg-white text-emerald-700 px-3 py-1 rounded-full font-bold">使用 Google 登入</button>
+        <button id="btn-login" class="bg-white text-emerald-800 px-4 py-1.5 rounded-full font-bold shadow hover:shadow-md transition">使用 Google 登入</button>
         <div id="nav-user-info" class="hidden relative items-center gap-2">
           <button id="nav-user-toggle" type="button" class="flex items-center gap-2">
             <img id="nav-user-photo" class="w-8 h-8 rounded-full border-2 border-white" />

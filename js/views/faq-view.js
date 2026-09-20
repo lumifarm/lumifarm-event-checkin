@@ -64,7 +64,7 @@ const FAQS = [
 export function renderFaq(container) {
   const items = FAQS.map(
     (item) => `
-    <details class="bg-white rounded-xl shadow p-5">
+    <details class="card rounded-xl p-5">
       <summary class="font-bold text-gray-800 cursor-pointer">${item.q}</summary>
       <p class="text-sm text-gray-600 mt-2">${item.a}</p>
     </details>`
@@ -72,7 +72,7 @@ export function renderFaq(container) {
 
   container.innerHTML = `
     <div class="max-w-2xl mx-auto">
-      <h1 class="text-2xl font-bold text-gray-800 my-4">常見問題</h1>
+      <h1 class="text-2xl font-bold text-gray-800 my-4">🌻 常見問題</h1>
       <div class="space-y-3">${items}</div>
     </div>`;
 }

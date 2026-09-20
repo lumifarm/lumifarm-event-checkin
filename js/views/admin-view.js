@@ -36,7 +36,7 @@ function toDatetimeLocalValue(date) {
 // 直接塞進 innerHTML 會讓惡意內容在主辦方的瀏覽器裡被當成程式碼執行。
 function renderPaymentRow(p, onDone) {
   const row = document.createElement("div");
-  row.className = "bg-white rounded-lg shadow p-4 flex items-center justify-between gap-3";
+  row.className = "card rounded-lg p-4 flex items-center justify-between gap-3";
 
   const info = document.createElement("div");
   const title = document.createElement("p");
@@ -84,25 +84,25 @@ function renderPaymentRow(p, onDone) {
 export function renderAdmin(container) {
   container.innerHTML = `
     <div class="max-w-3xl mx-auto">
-      <h1 class="text-xl font-bold text-gray-800 my-4">主辦專區</h1>
+      <h1 class="text-xl font-bold text-gray-800 my-4">🌳 主辦專區</h1>
       <p id="admin-gate" class="hidden text-gray-500 py-8"></p>
 
       <div id="admin-section" class="hidden space-y-10">
-        <nav class="flex flex-wrap gap-2 sticky top-0 bg-gray-50 py-2 z-10 -mx-1 px-1">
-          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="event-form-section">新增活動</button>
-          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="event-manage-section">活動管理</button>
-          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="payments-section">待確認繳費</button>
-          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="cancellations-section">取消申請</button>
-          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="users-section">會員總覽</button>
-          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="notice-section">行前通知</button>
-          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="insurance-section">投保名單</button>
-          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="work-points-section">換工點數</button>
-          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-gray-100" data-target="discount-section">出席折扣券</button>
+        <nav class="flex flex-wrap gap-2 sticky top-0 bg-amber-50/95 backdrop-blur py-2 z-10 -mx-1 px-1 rounded-lg">
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="event-form-section">新增活動</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="event-manage-section">活動管理</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="payments-section">待確認繳費</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="cancellations-section">取消申請</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="users-section">會員總覽</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="notice-section">行前通知</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="insurance-section">投保名單</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="work-points-section">換工點數</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="discount-section">出席折扣券</button>
         </nav>
 
         <section id="event-form-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3" id="event-form-title">新增活動</h2>
-          <form id="event-form" class="bg-white rounded-xl shadow p-5 space-y-3">
+          <form id="event-form" class="card rounded-xl p-5 space-y-3">
             <div>
               <label class="text-sm text-gray-600 block mb-1">活動名稱</label>
               <input id="ev-title" type="text" required class="w-full border rounded-lg p-2" />
@@ -178,12 +178,12 @@ export function renderAdmin(container) {
 
         <section id="users-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">會員總覽</h2>
-          <div id="user-overview" class="bg-white rounded-xl shadow overflow-x-auto"></div>
+          <div id="user-overview" class="card rounded-xl overflow-x-auto"></div>
         </section>
 
         <section id="notice-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">行前通知</h2>
-          <div class="bg-white rounded-xl shadow p-5 space-y-3">
+          <div class="card rounded-xl p-5 space-y-3">
             <div>
               <label class="text-sm text-gray-600 block mb-1">選擇活動</label>
               <select id="notice-event" class="w-full border rounded-lg p-2"></select>
@@ -219,7 +219,7 @@ export function renderAdmin(container) {
 
         <section id="insurance-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">投保名單</h2>
-          <div class="bg-white rounded-xl shadow p-5 space-y-3">
+          <div class="card rounded-xl p-5 space-y-3">
             <p class="text-xs text-gray-500">
               匯出某活動目前還算數的報名者（不含已取消）的真實姓名、身分證字號、出生年月日，供辦理活動保險使用。這些是高度敏感個資，請只在需要投保時匯出、辦好保險後盡快刪除下載或複製出去的內容，不要留存在不必要的地方。
             </p>
@@ -242,7 +242,7 @@ export function renderAdmin(container) {
           <h2 class="text-lg font-bold text-gray-800 mb-3">換工點數</h2>
 
           <h3 class="text-sm font-bold text-gray-600 mb-2">一鍵發放（換工活動當天有報到就給點）</h3>
-          <form id="wp-bulk-form" class="bg-white rounded-xl shadow p-5 space-y-3">
+          <form id="wp-bulk-form" class="card rounded-xl p-5 space-y-3">
             <div>
               <label class="text-sm text-gray-600 block mb-1">活動</label>
               <select id="wp-bulk-event" required class="w-full border rounded-lg p-2"></select>
@@ -270,7 +270,7 @@ export function renderAdmin(container) {
           <p class="text-xs text-gray-500 mb-3">
             要幫某人補登、修正，或是會員要用點數兌換課程/農產品時在這裡登記：發放用正數，兌換扣點用負數，每筆都會留下紀錄。
           </p>
-          <form id="work-points-form" class="bg-white rounded-xl shadow p-5 space-y-3">
+          <form id="work-points-form" class="card rounded-xl p-5 space-y-3">
             <div>
               <label class="text-sm text-gray-600 block mb-1">會員</label>
               <select id="wp-user" required class="w-full border rounded-lg p-2"></select>
@@ -296,7 +296,7 @@ export function renderAdmin(container) {
 
           <div class="mt-4">
             <h3 class="text-sm font-bold text-gray-600 mb-2">該會員的點數紀錄</h3>
-            <div id="wp-history" class="bg-white rounded-xl shadow divide-y"></div>
+            <div id="wp-history" class="card rounded-xl divide-y"></div>
           </div>
         </section>
 
@@ -307,7 +307,7 @@ export function renderAdmin(container) {
     100 - DISCOUNT_PERCENT
   } 折優惠券。券會在會員下次報名付費活動時自動套用、用掉就沒了，不能跟其他優惠併用。
           </p>
-          <div id="discount-eligible-list" class="bg-white rounded-xl shadow divide-y mb-3"></div>
+          <div id="discount-eligible-list" class="card rounded-xl divide-y mb-3"></div>
           <div class="flex gap-3">
             <button type="button" id="discount-refresh" class="text-sm text-gray-500 underline">重新整理名單</button>
             <button type="button" id="discount-issue-btn" class="btn-primary text-sm" disabled>
@@ -442,7 +442,7 @@ export function renderAdmin(container) {
 
   function renderEventRow(ev) {
     const row = document.createElement("div");
-    row.className = "bg-white rounded-lg shadow p-4 flex items-center gap-3";
+    row.className = "card rounded-lg p-4 flex items-center gap-3";
 
     if (ev.posterUrl) {
       const thumb = document.createElement("img");
@@ -535,7 +535,7 @@ export function renderAdmin(container) {
 
   function renderCancelRow(c, onDone) {
     const row = document.createElement("div");
-    row.className = "bg-white rounded-lg shadow p-4 flex items-center justify-between gap-3";
+    row.className = "card rounded-lg p-4 flex items-center justify-between gap-3";
 
     const info = document.createElement("div");
     const title = document.createElement("p");

@@ -41,7 +41,7 @@ export async function renderEventDetail(container) {
       ${ev.tags && ev.tags.length > 0 ? `<div class="flex flex-wrap gap-1 mb-2">${renderTagBadgesHtml(ev.tags)}</div>` : ""}
       <p class="text-sm text-gray-500 mb-4">${formatDate(ev.date)} · ${ev.location || ""}</p>
       ${workFormHtml ? `<div class="mb-4">${workFormHtml}</div>` : ""}
-      <div class="bg-white rounded-xl shadow p-5 space-y-3">
+      <div class="card rounded-xl p-5 space-y-3">
         <p class="text-gray-700 whitespace-pre-wrap">${ev.description || "（尚無活動說明）"}</p>
         <div class="flex items-center justify-between text-sm text-gray-500 border-t pt-3">
           <span>費用：${ev.price ? `NT$${ev.price}` : "免費"}</span>
