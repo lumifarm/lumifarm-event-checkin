@@ -6,12 +6,23 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
   writeBatch,
   serverTimestamp,
   increment,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { listCheckedInTickets } from "./events.js";
+
+// 依 createdAt 新到舊排序：故意不在查詢裡加 orderBy，「userId 相等 + 依
+// createdAt 排序」這種組合 Firestore 需要額外建立複合索引，沒建的話查詢
+// 會直接拋錯。這裡只用一個 where 條件（不需要索引），排序交給前端做，
+// 跟這個專案其他列表（活動、票券）的排序方式一致。
+function sortByCreatedAtDesc(docs) {
+  return [...docs].sort((a, b) => {
+    const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+    const db_ = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+    return db_ - da;
+  });
+}
 
 // 換工點數：每筆異動都存成一筆不可修改的紀錄（workPointTransactions），
 // users/{uid}.workPoints 是這些紀錄加總出來的目前餘額，用 increment 讓寫入
@@ -28,13 +39,9 @@ export async function getMyPointsBalance() {
 export async function getMyPointsHistory() {
   const user = auth.currentUser;
   if (!user) return [];
-  const q = query(
-    collection(db, "workPointTransactions"),
-    where("userId", "==", user.uid),
-    orderBy("createdAt", "desc")
-  );
+  const q = query(collection(db, "workPointTransactions"), where("userId", "==", user.uid));
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return sortByCreatedAtDesc(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
 }
 
 // 給主辦專區用：登記一筆點數異動（發放用正數、兌換扣點用負數），
@@ -84,11 +91,7 @@ export async function awardPointsToCheckedInParticipants(eventId, points, reason
 
 // 給主辦專區用：某個使用者最近的點數異動紀錄
 export async function listPointsHistoryForUser(userId) {
-  const q = query(
-    collection(db, "workPointTransactions"),
-    where("userId", "==", userId),
-    orderBy("createdAt", "desc")
-  );
+  const q = query(collection(db, "workPointTransactions"), where("userId", "==", userId));
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return sortByCreatedAtDesc(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
 }
