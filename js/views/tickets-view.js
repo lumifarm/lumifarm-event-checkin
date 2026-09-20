@@ -200,9 +200,9 @@ export function renderTickets(container) {
 
     const isLaborExchange = (t.event?.tags || []).includes("labor-exchange");
     const workFormHtml =
-      isLaborExchange && t.event?.workFormUrl && !t.isCancelled
+      isLaborExchange && !t.isCancelled
         ? `<div class="mt-2 bg-lime-50 border border-lime-300 rounded-lg p-2 text-xs text-lime-800">
-            換工完成後請<a href="${t.event.workFormUrl}" target="_blank" rel="noopener" class="underline font-bold">上傳成果照片</a>，主辦方審核後會登記換工點數。
+            這是換工活動，出席並完成工作後，主辦方確認 OK 就會直接登記換工點數，不需要另外上傳照片。
           </div>`
         : "";
 

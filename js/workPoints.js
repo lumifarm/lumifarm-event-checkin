@@ -11,6 +11,7 @@ import {
   serverTimestamp,
   increment,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { listCheckedInTickets } from "./events.js";
 
 // 換工點數：每筆異動都存成一筆不可修改的紀錄（workPointTransactions），
 // users/{uid}.workPoints 是這些紀錄加總出來的目前餘額，用 increment 讓寫入
@@ -52,6 +53,33 @@ export async function awardPoints({ userId, points, reason, eventId }) {
   });
   batch.update(doc(db, "users", userId), { workPoints: increment(points) });
   await batch.commit();
+}
+
+// 給主辦專區「換工點數一鍵發放」用：把同一筆點數發給某活動所有已報到、
+// 未取消的會員，不用一個個手動選。用票券上的 workPointsAwarded 記住
+// 「這張票券已經因為這場活動被發過點數」，重複按同一顆按鈕不會重複發放；
+// 每個人還是各自留一筆 workPointTransactions，跟手動登記完全一樣可查、可對帳。
+export async function awardPointsToCheckedInParticipants(eventId, points, reason) {
+  const tickets = await listCheckedInTickets(eventId);
+  const pending = tickets.filter((t) => !t.workPointsAwarded);
+
+  const batch = writeBatch(db);
+  pending.forEach((t) => {
+    const txRef = doc(collection(db, "workPointTransactions"));
+    batch.set(txRef, {
+      userId: t.userId,
+      points,
+      reason: reason || "",
+      eventId,
+      createdAt: serverTimestamp(),
+      createdBy: auth.currentUser?.uid || null,
+    });
+    batch.update(doc(db, "users", t.userId), { workPoints: increment(points) });
+    batch.update(doc(db, "tickets", t.id), { workPointsAwarded: true });
+  });
+  if (pending.length > 0) await batch.commit();
+
+  return { awardedCount: pending.length, alreadyAwardedCount: tickets.length - pending.length };
 }
 
 // 給主辦專區用：某個使用者最近的點數異動紀錄

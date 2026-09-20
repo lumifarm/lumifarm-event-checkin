@@ -9,6 +9,7 @@ import {
   deleteEvent,
   listActiveParticipantEmails,
   listActiveParticipantsForInsurance,
+  listCheckedInTickets,
   listPendingCancellations,
   approveCancellation,
   rejectCancellation,
@@ -16,7 +17,7 @@ import {
 import { listAllUsers } from "../tickets.js";
 import { buildPreEventNotice, buildGmailComposeLink } from "../notices.js";
 import { EVENT_TAGS, renderTagBadgesHtml } from "../tags.js";
-import { awardPoints, listPointsHistoryForUser } from "../workPoints.js";
+import { awardPoints, awardPointsToCheckedInParticipants, listPointsHistoryForUser } from "../workPoints.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -135,18 +136,6 @@ export function renderAdmin(container) {
               </div>
             </div>
             <div>
-              <label class="text-sm text-gray-600 block mb-1">換工照片上傳表單網址（選填，「換工活動」標籤才需要）</label>
-              <input
-                id="ev-work-form-url"
-                type="url"
-                placeholder="https://forms.gle/..."
-                class="w-full border rounded-lg p-2"
-              />
-              <p class="text-xs text-gray-500 mt-1">
-                貼上你另外建立的 Google 表單網址（收成果照片＋換工項目），會員在活動詳情頁和票券上會看到連結。
-              </p>
-            </div>
-            <div>
               <label class="text-sm text-gray-600 block mb-1">活動海報圖片網址（選填）</label>
               <input
                 id="ev-poster-url"
@@ -245,8 +234,35 @@ export function renderAdmin(container) {
 
         <section id="work-points-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">換工點數</h2>
+
+          <h3 class="text-sm font-bold text-gray-600 mb-2">一鍵發放（換工活動當天有報到就給點）</h3>
+          <form id="wp-bulk-form" class="bg-white rounded-xl shadow p-5 space-y-3">
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">活動</label>
+              <select id="wp-bulk-event" required class="w-full border rounded-lg p-2"></select>
+            </div>
+            <p id="wp-bulk-count" class="text-xs text-gray-500"></p>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-sm text-gray-600 block mb-1">每人發放點數</label>
+                <input id="wp-bulk-points" type="number" min="1" required class="w-full border rounded-lg p-2" />
+              </div>
+              <div>
+                <label class="text-sm text-gray-600 block mb-1">說明（選填）</label>
+                <input id="wp-bulk-reason" type="text" placeholder="例如：10/5 換工活動" class="w-full border rounded-lg p-2" />
+              </div>
+            </div>
+            <button type="submit" id="wp-bulk-submit" class="btn-primary text-sm">
+              一鍵發放給已報到會員
+            </button>
+            <p class="text-xs text-gray-500">
+              只會發給這場活動「已報到、未取消」的會員，每張票券只會被算一次，重複按同一場活動不會重複發放。
+            </p>
+          </form>
+
+          <h3 class="text-sm font-bold text-gray-600 mt-6 mb-2">個別調整 / 兌換扣點</h3>
           <p class="text-xs text-gray-500 mb-3">
-            換工照片請透過另外建立的 Google 表單收件、審核；審核 OK 之後回到這裡登記點數。發放用正數，兌換課程/農產品用負數扣點，每筆都會留下紀錄。
+            要幫某人補登、修正，或是會員要用點數兌換課程/農產品時在這裡登記：發放用正數，兌換扣點用負數，每筆都會留下紀錄。
           </p>
           <form id="work-points-form" class="bg-white rounded-xl shadow p-5 space-y-3">
             <div>
@@ -266,7 +282,7 @@ export function renderAdmin(container) {
               </div>
               <div>
                 <label class="text-sm text-gray-600 block mb-1">說明</label>
-                <input id="wp-reason" type="text" placeholder="例如：10/5 換工-拔草，或 兌換：白米一包" class="w-full border rounded-lg p-2" />
+                <input id="wp-reason" type="text" placeholder="例如：補登換工點數，或 兌換：白米一包" class="w-full border rounded-lg p-2" />
               </div>
             </div>
             <button type="submit" id="wp-submit" class="btn-primary text-sm">登記點數異動</button>
@@ -311,7 +327,6 @@ export function renderAdmin(container) {
     price: container.querySelector("#ev-price"),
     maxCap: container.querySelector("#ev-maxcap"),
     posterUrl: container.querySelector("#ev-poster-url"),
-    workFormUrl: container.querySelector("#ev-work-form-url"),
   };
 
   const tagCheckboxes = Array.from(container.querySelectorAll(".ev-tag-checkbox"));
@@ -360,7 +375,6 @@ export function renderAdmin(container) {
     fields.price.value = ev.price || 0;
     fields.maxCap.value = ev.maxCap || "";
     fields.posterUrl.value = ev.posterUrl || "";
-    fields.workFormUrl.value = ev.workFormUrl || "";
     showPosterPreview(ev.posterUrl || null);
     setCheckedTags(ev.tags || []);
     formTitleEl.textContent = `編輯活動：${ev.title || ""}`;
@@ -381,7 +395,6 @@ export function renderAdmin(container) {
       price: Number(fields.price.value) || 0,
       maxCap: fields.maxCap.value.trim() === "" ? null : Number(fields.maxCap.value),
       posterUrl: fields.posterUrl.value.trim() || null,
-      workFormUrl: fields.workFormUrl.value.trim() || null,
       tags: getCheckedTags(),
     };
     if (!data.title || !data.date) {
@@ -847,6 +860,70 @@ export function renderAdmin(container) {
     }
   });
 
+  const wpBulkForm = container.querySelector("#wp-bulk-form");
+  const wpBulkEventSelect = container.querySelector("#wp-bulk-event");
+  const wpBulkCount = container.querySelector("#wp-bulk-count");
+  const wpBulkPointsInput = container.querySelector("#wp-bulk-points");
+  const wpBulkReasonInput = container.querySelector("#wp-bulk-reason");
+  const wpBulkSubmitBtn = container.querySelector("#wp-bulk-submit");
+
+  let wpBulkEventsCache = [];
+
+  async function populateWpBulkEventSelect() {
+    wpBulkEventsCache = await listEvents();
+    wpBulkEventSelect.innerHTML = wpBulkEventsCache
+      .map((ev) => `<option value="${ev.id}">${ev.title || "（未命名活動）"}</option>`)
+      .join("");
+    updateWpBulkCount();
+  }
+
+  async function updateWpBulkCount() {
+    const eventId = wpBulkEventSelect.value;
+    if (!eventId) {
+      wpBulkCount.textContent = "";
+      return;
+    }
+    wpBulkCount.textContent = "計算已報到人數中...";
+    const tickets = await listCheckedInTickets(eventId);
+    const pending = tickets.filter((t) => !t.workPointsAwarded);
+    wpBulkCount.textContent =
+      tickets.length === 0
+        ? "這場活動目前沒有已報到的會員"
+        : `已報到 ${tickets.length} 人，其中 ${pending.length} 人還沒發過這場的點數`;
+  }
+
+  wpBulkEventSelect.addEventListener("change", updateWpBulkCount);
+
+  wpBulkForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const eventId = wpBulkEventSelect.value;
+    const points = Number(wpBulkPointsInput.value);
+    if (!eventId || !points) {
+      alert("請選擇活動並輸入大於 0 的點數");
+      return;
+    }
+
+    wpBulkSubmitBtn.disabled = true;
+    wpBulkSubmitBtn.textContent = "發放中...";
+    try {
+      const ev = wpBulkEventsCache.find((e2) => e2.id === eventId);
+      const reason = wpBulkReasonInput.value.trim() || `${ev?.title || "換工活動"} 換工點數`;
+      const { awardedCount, alreadyAwardedCount } = await awardPointsToCheckedInParticipants(eventId, points, reason);
+      alert(
+        alreadyAwardedCount > 0
+          ? `已發放給 ${awardedCount} 人，另外 ${alreadyAwardedCount} 人先前已經發過這場的點數，這次略過。`
+          : `已發放給 ${awardedCount} 人。`
+      );
+      await updateWpBulkCount();
+      await populateWorkPointsForm();
+    } catch (err) {
+      alert("發放失敗：" + err.message);
+    } finally {
+      wpBulkSubmitBtn.disabled = false;
+      wpBulkSubmitBtn.textContent = "一鍵發放給已報到會員";
+    }
+  });
+
   const unsubscribe = onAuthStateChanged(auth, async (user) => {
     if (!user) {
       adminGate.textContent = "請先登入。";
@@ -872,6 +949,7 @@ export function renderAdmin(container) {
     populateNoticeEventSelect();
     populateInsuranceEventSelect();
     populateWorkPointsForm();
+    populateWpBulkEventSelect();
   });
 
   return () => unsubscribe();

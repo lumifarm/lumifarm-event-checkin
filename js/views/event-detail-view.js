@@ -28,14 +28,11 @@ export async function renderEventDetail(container) {
   const ev = snap.data();
   const posterHtml = ev.posterUrl ? `<img src="${ev.posterUrl}" alt="" class="w-full rounded-xl mb-4" />` : "";
   const isLaborExchange = (ev.tags || []).includes("labor-exchange");
-  const workFormHtml =
-    isLaborExchange && ev.workFormUrl
-      ? `<div class="bg-lime-50 border border-lime-300 rounded-xl p-4 text-sm text-lime-800">
-          這是換工活動！完成工作、確認 OK 後，請
-          <a href="${ev.workFormUrl}" target="_blank" rel="noopener" class="underline font-bold">點此上傳成果照片</a>，
-          主辦方審核後會登記換工點數到你的帳號。
-        </div>`
-      : "";
+  const workFormHtml = isLaborExchange
+    ? `<div class="bg-lime-50 border border-lime-300 rounded-xl p-4 text-sm text-lime-800">
+        這是換工活動！當天出席並完成拔草、澆水、種植等工作，主辦方確認 OK 後會直接把換工點數登記到你的帳號，不需要另外上傳照片。
+      </div>`
+    : "";
 
   container.innerHTML = `
     <div class="max-w-2xl mx-auto">

@@ -71,6 +71,17 @@ export async function listActiveParticipantsForInsurance(eventId) {
   );
 }
 
+// 給主辦專區「換工點數一鍵發放」用：某活動目前已報到、未取消的票券
+// （連同票券文件本身一起回傳，因為要在同一個 batch 裡順便標記
+// workPointsAwarded，避免同一個人被重複發放同一場活動的點數）。
+export async function listCheckedInTickets(eventId) {
+  const q = query(collection(db, "tickets"), where("eventId", "==", eventId));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((t) => t.isCheckedIn && !t.isCancelled);
+}
+
 // 給主辦專區的活動管理用：Firestore 規則只允許 isAdmin() 呼叫這三個函式，
 // 一般使用者呼叫會被規則擋下來，不需要在這裡另外檢查權限。
 export async function createEvent(data) {
@@ -83,7 +94,6 @@ export async function createEvent(data) {
     maxCap: data.maxCap ?? null,
     posterUrl: data.posterUrl || null,
     tags: data.tags || [],
-    workFormUrl: data.workFormUrl || null,
     currentCount: 0,
   });
 }
@@ -98,7 +108,6 @@ export async function updateEvent(eventId, data) {
     maxCap: data.maxCap ?? null,
     posterUrl: data.posterUrl || null,
     tags: data.tags || [],
-    workFormUrl: data.workFormUrl || null,
   });
 }
 
