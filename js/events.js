@@ -110,11 +110,15 @@ export async function registerForEvent(eventId) {
       throw new Error("活動名額已滿");
     }
 
+    // 免費活動（price 是 0 或沒填）沒有錢好收，直接視為已繳費，
+    // 不需要使用者再多做一次匯款通知的動作。
+    const isFree = !event.price || event.price <= 0;
+
     tx.set(ticketRef, {
       ticketId: ticketRef.id,
       userId: user.uid,
       eventId,
-      paymentStatus: "unpaid",
+      paymentStatus: isFree ? "paid" : "unpaid",
       isCheckedIn: false,
       checkedInAt: null,
       isCancelled: false,

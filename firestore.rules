@@ -50,11 +50,19 @@ service cloud.firestore {
       allow read: if isSignedIn() &&
         (resource == null || resource.data.userId == request.auth.uid || isAdmin());
 
+      // 免費活動（events.price == 0）報名時可以直接把 paymentStatus 建立成
+      // 'paid'，不用先走 unpaid → pending → paid；這裡用 get() 去查真正的
+      // 活動價格做確認，不能只信任前端送來的資料，不然任何人都能對付費
+      // 活動謊報自己已經繳費。
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.isCheckedIn == false &&
         request.resource.data.isCancelled == false &&
-        request.resource.data.paymentStatus == 'unpaid';
+        (
+          request.resource.data.paymentStatus == 'unpaid' ||
+          (request.resource.data.paymentStatus == 'paid' &&
+            get(/databases/$(database)/documents/events/$(request.resource.data.eventId)).data.get('price', 0) == 0)
+        );
 
       allow update: if isAdmin() ||
         // 本人回報已完成匯款，待主辦方對帳；不能直接改成 paid，
