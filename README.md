@@ -8,7 +8,7 @@
 - **活動瀏覽與報名**：首頁列出所有活動，登入後可直接報名，系統會檢查名額上限並記錄繳費狀態（未繳費／已繳費）。
 - **我的票券 + QR Code**：報名成功後在「我的票券」頁面看到專屬 QR Code（內含 Ticket ID 與安全驗證碼）。
 - **現場報到掃描**：主辦方在「報到管理」頁面用手機鏡頭掃描參加者的 QR Code，系統驗證後自動把該筆票券標記為已報到。
-- **主辦專區**：活動新增/編輯/刪除（含上傳海報圖片）、核對匯款、審核取消申請、會員總覽都在這一頁。
+- **主辦專區**：活動新增/編輯/刪除（含貼上海報圖片網址）、核對匯款、審核取消申請、會員總覽都在這一頁。
 - **評價與出席率**：活動報到後即可填寫星級評價與文字回饋；個人中心會顯示總報名次數、實際出席次數、取消次數與出席率。
 - **新手教學**：第一次造訪網站會彈出引導視窗，帶去「新手教學」頁面說明整個使用流程。
 - **取消報名（需主辦方審核）**：報名成功後直接跳到「我的票券」引導完成繳費；還沒報到的票券可以在「我的票券」申請取消，取消前會顯示退款須知並依距離活動天數試算退款比例，送出後進入「審核中」，要主辦方在「主辦專區」核准才會真的取消、退還名額；駁回的話活動照常進行、不退費。
@@ -35,7 +35,6 @@ js/payment.js             匯款資訊、繳費通知、主辦方確認收款
 js/reviews.js             送出活動評價
 js/views/*.js             各路由畫面：把 HTML 畫進傳入的容器、回傳 cleanup 函式
 firestore.rules           Firestore 安全性規則
-storage.rules             Firebase Storage 安全性規則（活動海報圖片）
 ```
 
 ## Firestore 資料結構
@@ -62,7 +61,7 @@ storage.rules             Firebase Storage 安全性規則（活動海報圖片�
 
 ## 活動海報圖片
 
-主辦專區新增/編輯活動時可以上傳一張海報圖片（2MB 以內），存在 Firebase Storage 的 `event-posters/{eventId}`（同一個活動重新上傳會直接覆蓋舊檔），下載網址存回 `events/{eventId}.posterUrl`，活動列表會顯示縮圖。`storage.rules` 只允許 `admins` 名單裡的帳號上傳/覆蓋/刪除，任何人都可以讀取（因為活動本來就是公開瀏覽的）。
+Firebase 現在新專案的 Cloud Storage 預設要升級 Blaze（付費）方案才能啟用，所以海報圖片不是直接上傳檔案，而是主辦方自己把圖片放到 Google 相簿、雲端硬碟、Imgur 之類的地方拿到公開網址，貼在「主辦專區」新增/編輯活動表單的「活動海報圖片網址」欄位，存成 `events/{eventId}.posterUrl`，活動列表會顯示縮圖。這個欄位就是一般字串，不涉及任何額外的 Firebase 服務或安全規則。
 
 ## 取消與退款政策
 
@@ -102,9 +101,6 @@ storage.rules             Firebase Storage 安全性規則（活動海報圖片�
 
 5. **貼上安全性規則**
    Firestore Database → Rules 分頁 → 把本專案 `firestore.rules` 的內容整份貼上 → Publish。
-
-5-1. **啟用 Cloud Storage（活動海報用）**
-   左側選單 → Build → Storage → 「開始使用 / Get started」→ 選正式模式 → 選跟 Firestore 一樣的區域。啟用後到 Storage 的 Rules 分頁，把本專案 `storage.rules` 的內容貼上 → Publish。
 
 6. **設定主辦方帳號（admins collection）**
    用你自己的 Google 帳號登入網站一次，讓 `users` collection 產生你的 uid（在 Authentication → Users 分頁可以查到 uid）。接著到 Firestore Database → Start collection → Collection ID 填 `admins` → 文件 ID 貼上你的 uid → 隨意加一個欄位（例如 `role: "organizer"`）→ 儲存。這個帳號之後就能使用「報到管理」與「主辦專區」頁面。

@@ -1,4 +1,4 @@
-import { db, auth, storage } from "./firebase-config.js";
+import { db, auth } from "./firebase-config.js";
 import {
   collection,
   getDocs,
@@ -15,14 +15,6 @@ import {
   serverTimestamp,
   increment,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-import {
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-  deleteObject,
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
-
-const MAX_POSTER_BYTES = 2 * 1024 * 1024;
 
 // 取消政策的退款比例：活動開始前 >=7 天全額（會另外扣轉帳手續費）、
 // 3~6 天內 50%、少於 3 天不退款。天數用「事件日期 - 現在」計算。
@@ -49,6 +41,7 @@ export async function createEvent(data) {
     date: data.date,
     price: data.price || 0,
     maxCap: data.maxCap ?? null,
+    posterUrl: data.posterUrl || null,
     currentCount: 0,
   });
 }
@@ -61,34 +54,12 @@ export async function updateEvent(eventId, data) {
     date: data.date,
     price: data.price || 0,
     maxCap: data.maxCap ?? null,
+    posterUrl: data.posterUrl || null,
   });
 }
 
 export async function deleteEvent(eventId) {
   await deleteDoc(doc(db, "events", eventId));
-}
-
-// 海報固定存成 event-posters/{eventId}，重新上傳會直接覆蓋舊檔，
-// 不用另外清舊檔案、也不會讓 Storage 裡累積一堆用不到的舊海報。
-export async function uploadEventPoster(eventId, file) {
-  if (file.size > MAX_POSTER_BYTES) {
-    throw new Error("圖片檔案太大，請壓縮到 2MB 以內再上傳");
-  }
-  const fileRef = storageRef(storage, `event-posters/${eventId}`);
-  await uploadBytes(fileRef, file);
-  const url = await getDownloadURL(fileRef);
-  await updateDoc(doc(db, "events", eventId), { posterUrl: url });
-  return url;
-}
-
-export async function removeEventPoster(eventId) {
-  try {
-    await deleteObject(storageRef(storage, `event-posters/${eventId}`));
-  } catch (e) {
-    // 檔案可能本來就不存在（例如活動從沒上傳過海報），忽略即可，
-    // 重點是把 Firestore 上的 posterUrl 清掉。
-  }
-  await updateDoc(doc(db, "events", eventId), { posterUrl: null });
 }
 
 // 票券 ID 固定用「活動ID_使用者ID」，而不是隨機 ID：

@@ -7,8 +7,6 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
-  uploadEventPoster,
-  removeEventPoster,
   listPendingCancellations,
   approveCancellation,
   rejectCancellation,
@@ -105,12 +103,17 @@ export function renderAdmin(container) {
               <input id="ev-maxcap" type="number" min="1" class="w-full border rounded-lg p-2" />
             </div>
             <div>
-              <label class="text-sm text-gray-600 block mb-1">活動海報圖片（選填，2MB 以內）</label>
-              <div id="ev-poster-preview" class="hidden mb-2">
-                <img class="w-full max-w-xs rounded-lg border" />
-                <button type="button" id="ev-poster-remove" class="text-sm text-red-600 underline mt-1">移除海報</button>
-              </div>
-              <input id="ev-poster" type="file" accept="image/*" class="w-full text-sm" />
+              <label class="text-sm text-gray-600 block mb-1">活動海報圖片網址（選填）</label>
+              <input
+                id="ev-poster-url"
+                type="url"
+                placeholder="https://..."
+                class="w-full border rounded-lg p-2"
+              />
+              <p class="text-xs text-gray-500 mt-1">
+                先把圖片上傳到 Google 相簿、雲端硬碟、Imgur 之類的地方，取得公開網址後貼在這裡。
+              </p>
+              <img id="ev-poster-preview" class="hidden w-full max-w-xs rounded-lg border mt-2" />
             </div>
             <div class="flex gap-3 items-center">
               <button type="submit" id="event-form-submit" class="btn-primary text-sm">新增活動</button>
@@ -153,8 +156,6 @@ export function renderAdmin(container) {
   const submitBtn = container.querySelector("#event-form-submit");
   const cancelBtn = container.querySelector("#event-form-cancel");
   const posterPreview = container.querySelector("#ev-poster-preview");
-  const posterPreviewImg = posterPreview.querySelector("img");
-  const posterRemoveBtn = container.querySelector("#ev-poster-remove");
   const fields = {
     title: container.querySelector("#ev-title"),
     description: container.querySelector("#ev-description"),
@@ -162,21 +163,22 @@ export function renderAdmin(container) {
     date: container.querySelector("#ev-date"),
     price: container.querySelector("#ev-price"),
     maxCap: container.querySelector("#ev-maxcap"),
-    poster: container.querySelector("#ev-poster"),
+    posterUrl: container.querySelector("#ev-poster-url"),
   };
 
   let editingEventId = null;
-  let currentPosterUrl = null;
 
   function showPosterPreview(url) {
-    currentPosterUrl = url || null;
     if (url) {
-      posterPreviewImg.src = url;
+      posterPreview.src = url;
       posterPreview.classList.remove("hidden");
     } else {
       posterPreview.classList.add("hidden");
     }
   }
+  // 網址貼錯、圖片打不開時就把預覽藏起來，不要留一個壞掉的圖示在表單裡
+  posterPreview.addEventListener("error", () => posterPreview.classList.add("hidden"));
+  fields.posterUrl.addEventListener("input", () => showPosterPreview(fields.posterUrl.value.trim()));
 
   function resetForm() {
     editingEventId = null;
@@ -197,7 +199,7 @@ export function renderAdmin(container) {
     fields.date.value = toDatetimeLocalValue(d);
     fields.price.value = ev.price || 0;
     fields.maxCap.value = ev.maxCap || "";
-    fields.poster.value = "";
+    fields.posterUrl.value = ev.posterUrl || "";
     showPosterPreview(ev.posterUrl || null);
     formTitleEl.textContent = `編輯活動：${ev.title || ""}`;
     submitBtn.textContent = "儲存變更";
@@ -206,24 +208,6 @@ export function renderAdmin(container) {
   }
 
   cancelBtn.addEventListener("click", resetForm);
-
-  posterRemoveBtn.addEventListener("click", async () => {
-    if (!editingEventId) {
-      showPosterPreview(null);
-      return;
-    }
-    if (!confirm("確定要移除這張海報嗎？")) return;
-    posterRemoveBtn.disabled = true;
-    try {
-      await removeEventPoster(editingEventId);
-      showPosterPreview(null);
-      renderEventList();
-    } catch (err) {
-      alert("移除失敗：" + err.message);
-    } finally {
-      posterRemoveBtn.disabled = false;
-    }
-  });
 
   eventForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -234,6 +218,7 @@ export function renderAdmin(container) {
       date: fields.date.value ? new Date(fields.date.value) : null,
       price: Number(fields.price.value) || 0,
       maxCap: fields.maxCap.value.trim() === "" ? null : Number(fields.maxCap.value),
+      posterUrl: fields.posterUrl.value.trim() || null,
     };
     if (!data.title || !data.date) {
       alert("請填寫活動名稱與日期時間");
@@ -242,19 +227,11 @@ export function renderAdmin(container) {
 
     submitBtn.disabled = true;
     try {
-      let eventId = editingEventId;
       if (editingEventId) {
         await updateEvent(editingEventId, data);
       } else {
-        const ref = await createEvent(data);
-        eventId = ref.id;
+        await createEvent(data);
       }
-
-      const posterFile = fields.poster.files[0];
-      if (posterFile) {
-        await uploadEventPoster(eventId, posterFile);
-      }
-
       resetForm();
       renderEventList();
     } catch (err) {
