@@ -2,11 +2,18 @@ import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { getMyTickets, renderTicketQRCode, getMyStats, paymentStatusLabel } from "../tickets.js";
 import { BANK_INFO, submitPaymentNotice, buildPaymentMailto } from "../payment.js";
+import { cancelTicket, calcRefundPercent } from "../events.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleString("zh-TW", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function eventDateOf(t) {
+  const raw = t.event?.date;
+  if (!raw) return null;
+  return raw.toDate ? raw.toDate() : new Date(raw);
 }
 
 function paymentSectionHtml(t) {
@@ -31,6 +38,70 @@ function paymentSectionHtml(t) {
     return `<p class="text-sm text-gray-500 mt-2">已收到你的匯款通知，主辦方核對後會將狀態改為已繳費。</p>`;
   }
   return "";
+}
+
+const CANCELLATION_POLICY_LINES = [
+  "・活動開始前 7 天（含）以上申請取消：全額退款，但會先扣除轉帳手續費",
+  "・活動開始前 3～6 天申請取消：退款 50%",
+  "・活動開始前不足 3 天申請取消：恕不退款",
+];
+
+// 這裡只負責把百分比轉成文字說明，實際門檻只在 events.js 的
+// calcRefundPercent 裡定義一份，避免兩邊各寫一次天數判斷、日後改政策漏改。
+function refundTierText(percent) {
+  if (percent >= 100) return "全額退款（會另外扣除轉帳手續費）";
+  if (percent >= 50) return "退款 50%";
+  return "恕不退款";
+}
+
+// 取消前一定要先看過這個須知才能送出，內容是純文字組成、不涉及使用者輸入，
+// 用 innerHTML 沒有風險。
+function showCancelModal({ eventTitle, daysLeft, refundPercent, onConfirm }) {
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50";
+
+  const box = document.createElement("div");
+  box.className = "bg-white rounded-xl shadow-lg max-w-md w-full p-6";
+  box.innerHTML = `
+    <h2 class="text-lg font-bold text-gray-800 mb-2">活動取消須知</h2>
+    <p class="text-sm text-gray-700 mb-2">活動：${eventTitle}</p>
+    <pre class="text-xs text-gray-600 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 mb-3">${CANCELLATION_POLICY_LINES.join("\n")}</pre>
+    <p class="text-sm font-bold text-gray-800 mb-4">
+      ${
+        daysLeft === null
+          ? "活動時間未定"
+          : `距離活動開始還有 ${Math.max(0, Math.floor(daysLeft))} 天，依政策你適用：${refundTierText(refundPercent)}`
+      }
+    </p>`;
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "flex gap-3 justify-end";
+
+  const backBtn = document.createElement("button");
+  backBtn.className = "text-sm text-gray-500 underline";
+  backBtn.textContent = "返回";
+  backBtn.addEventListener("click", () => overlay.remove());
+
+  const confirmBtn = document.createElement("button");
+  confirmBtn.className = "btn-danger text-sm";
+  confirmBtn.textContent = "確定申請取消";
+  confirmBtn.addEventListener("click", async () => {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = "處理中...";
+    try {
+      await onConfirm();
+      overlay.remove();
+    } catch (e) {
+      alert("取消失敗：" + e.message);
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = "確定申請取消";
+    }
+  });
+
+  btnRow.append(backBtn, confirmBtn);
+  box.appendChild(btnRow);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
 }
 
 export function renderTickets(container) {
@@ -76,6 +147,64 @@ export function renderTickets(container) {
     });
   }
 
+  function wireCancelButtons(tickets, user) {
+    ticketList.querySelectorAll(".btn-cancel-ticket").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const ticket = tickets.find((t) => t.id === btn.dataset.cancelId);
+        if (!ticket) return;
+        const eventDate = eventDateOf(ticket);
+        const daysLeft = eventDate ? (eventDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24) : null;
+        const refundPercent = eventDate ? calcRefundPercent(eventDate) : 0;
+
+        showCancelModal({
+          eventTitle: ticket.event?.title || "",
+          daysLeft,
+          refundPercent,
+          onConfirm: async () => {
+            await cancelTicket(ticket.id);
+            render(user);
+          },
+        });
+      });
+    });
+  }
+
+  function ticketCardHtml(t) {
+    if (t.isCancelled) {
+      return `
+      <div class="bg-white rounded-xl shadow p-5 opacity-75">
+        <h3 class="font-bold text-gray-800">${t.event?.title || "活動已刪除"}</h3>
+        <p class="text-sm text-gray-500">${formatDate(t.event?.date)} · ${t.event?.location || ""}</p>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <span class="badge badge-red">已取消</span>
+        </div>
+        <p class="text-sm text-gray-500 mt-2">退款比例：${t.refundPercent ?? 0}%</p>
+      </div>`;
+    }
+
+    const pay = paymentStatusLabel(t.paymentStatus);
+    return `
+      <div class="bg-white rounded-xl shadow p-5 flex flex-col md:flex-row gap-4 items-start">
+        <div id="qr-${t.id}" class="shrink-0"></div>
+        <div class="flex-1 w-full">
+          <h3 class="font-bold text-gray-800">${t.event?.title || "活動已刪除"}</h3>
+          <p class="text-sm text-gray-500">${formatDate(t.event?.date)} · ${t.event?.location || ""}</p>
+          <div class="flex flex-wrap gap-2 mt-2">
+            <span class="badge ${pay.cls}">${pay.text}</span>
+            <span class="badge ${t.isCheckedIn ? "badge-blue" : "badge-gray"}">
+              ${t.isCheckedIn ? "已報到" : "尚未報到"}
+            </span>
+          </div>
+          ${paymentSectionHtml(t)}
+          ${
+            t.isCheckedIn
+              ? `<a href="#/review?eventId=${t.eventId}" class="inline-block mt-3 text-sm text-emerald-600 underline">填寫活動評價</a>`
+              : `<button data-cancel-id="${t.id}" class="btn-cancel-ticket inline-block mt-3 text-sm text-red-600 underline">申請取消報名</button>`
+          }
+        </div>
+      </div>`;
+  }
+
   async function render(user) {
     if (!user) {
       profileSection.classList.add("hidden");
@@ -118,38 +247,16 @@ export function renderTickets(container) {
       return;
     }
 
-    ticketList.innerHTML = tickets
-      .map((t) => {
-        const pay = paymentStatusLabel(t.paymentStatus);
-        return `
-      <div class="bg-white rounded-xl shadow p-5 flex flex-col md:flex-row gap-4 items-start">
-        <div id="qr-${t.id}" class="shrink-0"></div>
-        <div class="flex-1 w-full">
-          <h3 class="font-bold text-gray-800">${t.event?.title || "活動已刪除"}</h3>
-          <p class="text-sm text-gray-500">${formatDate(t.event?.date)} · ${t.event?.location || ""}</p>
-          <div class="flex flex-wrap gap-2 mt-2">
-            <span class="badge ${pay.cls}">${pay.text}</span>
-            <span class="badge ${t.isCheckedIn ? "badge-blue" : "badge-gray"}">
-              ${t.isCheckedIn ? "已報到" : "尚未報到"}
-            </span>
-          </div>
-          ${paymentSectionHtml(t)}
-          ${
-            t.isCheckedIn
-              ? `<a href="#/review?eventId=${t.eventId}" class="inline-block mt-3 text-sm text-emerald-600 underline">填寫活動評價</a>`
-              : ""
-          }
-        </div>
-      </div>`;
-      })
-      .join("");
+    ticketList.innerHTML = tickets.map(ticketCardHtml).join("");
 
     tickets.forEach((t) => {
+      if (t.isCancelled) return;
       const el = ticketList.querySelector(`#qr-${t.id}`);
       if (el) renderTicketQRCode(el, t);
     });
 
     wirePaymentButtons(tickets, user);
+    wireCancelButtons(tickets, user);
   }
 
   const unsubscribe = onAuthStateChanged(auth, render);

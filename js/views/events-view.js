@@ -44,7 +44,7 @@ export function renderEvents(container) {
 
         if (!user) {
           actionHtml = `<button class="btn-disabled" disabled>請先登入</button>`;
-        } else if (ticket) {
+        } else if (ticket && !ticket.isCancelled) {
           const pay = paymentStatusLabel(ticket.paymentStatus);
           actionHtml = `<div class="flex items-center gap-2"><span class="badge badge-blue">已報名</span><span class="badge ${pay.cls}">${pay.text}</span></div>`;
         } else if (full) {
@@ -73,8 +73,8 @@ export function renderEvents(container) {
         btn.textContent = "報名中...";
         try {
           await registerForEvent(btn.dataset.eventId);
-          alert("報名成功！請至「我的票券」查看 QR Code。");
-          render();
+          alert("報名成功！接下來請完成繳費。");
+          location.hash = "#/tickets";
         } catch (e) {
           alert("報名失敗：" + e.message);
           btn.disabled = false;

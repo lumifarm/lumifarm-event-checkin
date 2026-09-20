@@ -10,9 +10,19 @@ import {
   query,
   orderBy,
   runTransaction,
+  writeBatch,
   serverTimestamp,
   increment,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// 取消政策的退款比例：活動開始前 >=7 天全額（會另外扣轉帳手續費）、
+// 3~6 天內 50%、少於 3 天不退款。天數用「事件日期 - 現在」計算。
+export function calcRefundPercent(eventDate) {
+  const daysLeft = (eventDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+  if (daysLeft >= 7) return 100;
+  if (daysLeft >= 3) return 50;
+  return 0;
+}
 
 export async function listEvents() {
   const q = query(collection(db, "events"), orderBy("date", "asc"));
@@ -86,8 +96,12 @@ export async function registerForEvent(eventId) {
     const eventSnap = await tx.get(eventRef);
     if (!eventSnap.exists()) throw new Error("活動不存在");
 
+    // 票券文件可能已經存在但是「已取消」的舊紀錄，這種情況要允許重新報名、
+    // 把文件整個重置成剛報名的狀態；只有「存在且未取消」才擋下來。
     const ticketSnap = await tx.get(ticketRef);
-    if (ticketSnap.exists()) throw new Error("你已經報名過這個活動了");
+    if (ticketSnap.exists() && !ticketSnap.data().isCancelled) {
+      throw new Error("你已經報名過這個活動了");
+    }
 
     const event = eventSnap.data();
     const currentCount = event.currentCount || 0;
@@ -102,6 +116,9 @@ export async function registerForEvent(eventId) {
       paymentStatus: "unpaid",
       isCheckedIn: false,
       checkedInAt: null,
+      isCancelled: false,
+      cancelledAt: null,
+      refundPercent: null,
       securityCode,
       createdAt: serverTimestamp(),
     });
@@ -110,4 +127,43 @@ export async function registerForEvent(eventId) {
   });
 
   return ticketRef.id;
+}
+
+// 取消報名：還沒報到的票券才能取消，退款比例依「距離活動還有幾天」計算，
+// 票券保留下來（標記 isCancelled）當作紀錄，而不是直接刪除；活動的名額
+// 同時 -1，讓其他人可以遞補。
+export async function cancelTicket(ticketId) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("請先登入");
+
+  const ticketRef = doc(db, "tickets", ticketId);
+  const ticketSnap = await getDoc(ticketRef);
+  if (!ticketSnap.exists()) throw new Error("找不到這張票券");
+
+  const ticket = ticketSnap.data();
+  if (ticket.userId !== user.uid) throw new Error("無權限操作這張票券");
+  if (ticket.isCheckedIn) throw new Error("已經報到的活動無法取消");
+  if (ticket.isCancelled) throw new Error("這張票券已經取消過了");
+
+  const eventRef = doc(db, "events", ticket.eventId);
+  const eventSnap = await getDoc(eventRef);
+  const eventData = eventSnap.exists() ? eventSnap.data() : null;
+  const eventDate = eventData?.date?.toDate
+    ? eventData.date.toDate()
+    : eventData?.date
+    ? new Date(eventData.date)
+    : null;
+
+  const refundPercent = eventDate ? calcRefundPercent(eventDate) : 0;
+
+  const batch = writeBatch(db);
+  batch.update(ticketRef, {
+    isCancelled: true,
+    cancelledAt: serverTimestamp(),
+    refundPercent,
+  });
+  batch.update(eventRef, { currentCount: increment(-1) });
+  await batch.commit();
+
+  return refundPercent;
 }

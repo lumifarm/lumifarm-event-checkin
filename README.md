@@ -1,4 +1,4 @@
-# 光農合作社 活動報名系統
+# 光農合作社群-活動報名系統
 
 會員制活動報名、繳費追蹤、現場 QR Code 報到與活動評價系統。純靜態網頁（HTML/CSS/JS），部署在 GitHub Pages，後端與資料庫使用 Firebase 免費方案（Spark plan）。
 
@@ -11,6 +11,7 @@
 - **主辦專區**：主辦方核對匯款後，在「主辦專區」把待確認的繳費標記為已繳費。
 - **評價與出席率**：活動報到後即可填寫星級評價與文字回饋；個人中心會顯示總報名次數、實際出席次數與出席率。
 - **新手教學**：第一次造訪網站會彈出引導視窗，帶去「新手教學」頁面說明整個使用流程。
+- **取消報名**：報名成功後直接跳到「我的票券」引導完成繳費；還沒報到的票券可以在「我的票券」申請取消，取消前會顯示退款須知，依距離活動天數計算退款比例。
 
 ## 架構
 
@@ -20,6 +21,7 @@
 
 ```
 index.html                首頁殼層：導覽列 + <main id="app">，實際內容由 JS 路由填入
+assets/logo.webp          導覽列的 logo 圖檔
 css/style.css             補充樣式
 js/app.js                 進入點：初始化導覽列、註冊路由、首次造訪彈跳視窗
 js/router.js              極簡 hash 路由器，切換路由前會呼叫上個畫面的 cleanup
@@ -41,7 +43,7 @@ firestore.rules           Firestore 安全性規則
 | --- | --- |
 | `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, createdAt |
 | `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), currentCount (number) |
-| `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, securityCode, createdAt |
+| `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, securityCode, createdAt |
 | `reviews/{reviewId}` | userId, eventId, rating (1-5), comment, createdAt |
 | `admins/{uid}` | 只要文件存在即代表該使用者是主辦方（可放任意欄位，例如 `{ addedAt: ... }`） |
 
@@ -54,6 +56,18 @@ firestore.rules           Firestore 安全性規則
 3. 主辦方在「報到管理」頁面下方會看到「待確認繳費」清單，核對匯款紀錄後按「確認已收款」，票券才會變成 `paid`。
 
 規則上刻意只允許本人把狀態改成 `pending`、不能直接改成 `paid`，避免有人謊報已繳費。
+
+## 取消與退款政策
+
+票券 ID 是固定的「活動ID_使用者ID」，取消不會刪除文件，只會標記 `isCancelled: true` 並記錄 `cancelledAt`、`refundPercent`，同時把該活動的 `currentCount` -1 讓名額釋出；之後同一個人要重新報名同一場活動，系統會把這份文件重置成剛報名的狀態。已經報到（`isCheckedIn: true`）的票券不能取消。
+
+退款比例（`js/events.js` 的 `calcRefundPercent`，只有這裡一份，其他地方不要重複寫判斷）：
+
+- 距離活動開始 ≥ 7 天：全額退款（另外扣除轉帳手續費）
+- 距離活動開始 3～6 天：退款 50%
+- 距離活動開始 < 3 天：不退款
+
+實際退款一樣是主辦方手動轉帳處理（系統不會自動退款），只是先幫忙算好比例、留下紀錄。
 
 ## Firebase 後台設定步驟
 

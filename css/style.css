@@ -47,6 +47,20 @@
   background-color: #f3f4f6;
   color: #4b5563;
 }
+.badge-red {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.btn-danger {
+  background-color: #dc2626;
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+}
 
 #qr-reader video,
 #qr-reader img {

@@ -12,6 +12,9 @@ service cloud.firestore {
       return isSignedIn() &&
         exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
+    function ticketOwnedByCaller() {
+      return isSignedIn() && resource.data.userId == request.auth.uid;
+    }
 
     // 主辦方名單：手動在 Firebase Console 建立文件，文件 ID = 使用者的 uid
     match /admins/{adminId} {
@@ -50,15 +53,31 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.isCheckedIn == false &&
+        request.resource.data.isCancelled == false &&
         request.resource.data.paymentStatus == 'unpaid';
 
-      // 本人只能把繳費狀態改成 pending（我已完成匯款，待主辦方對帳），
-      // 不能直接改成 paid——真正確認收款只能由主辦方（isAdmin）完成。
       allow update: if isAdmin() ||
-        (isSignedIn() && resource.data.userId == request.auth.uid &&
+        // 本人回報已完成匯款，待主辦方對帳；不能直接改成 paid，
+        // 也不能對一張已取消的票券這樣做。
+        (ticketOwnedByCaller() && resource.data.isCancelled != true &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['paymentStatus', 'paymentNote', 'paymentSubmittedAt']) &&
-          request.resource.data.paymentStatus == 'pending');
+          request.resource.data.paymentStatus == 'pending') ||
+        // 本人申請取消報名：還沒報到、還沒取消過，只能改這三個欄位，
+        // 退款比例由前端依當下日期算好寫入，Firestore 規則不驗證金額邏輯。
+        (ticketOwnedByCaller() && resource.data.isCheckedIn == false &&
+          resource.data.isCancelled != true &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['isCancelled', 'cancelledAt', 'refundPercent']) &&
+          request.resource.data.isCancelled == true) ||
+        // 本人針對「先前取消過的同一張票券」重新報名：整份重置回剛報名的狀態，
+        // 但活動不能被換成別的（eventId 必須不變）。
+        (ticketOwnedByCaller() && resource.data.isCancelled == true &&
+          request.resource.data.userId == request.auth.uid &&
+          request.resource.data.eventId == resource.data.eventId &&
+          request.resource.data.isCheckedIn == false &&
+          request.resource.data.isCancelled == false &&
+          request.resource.data.paymentStatus == 'unpaid');
 
       allow delete: if false;
     }

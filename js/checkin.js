@@ -38,6 +38,9 @@ export async function processScannedTicket(decodedText) {
   if (ticket.isCheckedIn) {
     throw new Error("這張票券已經報到過了");
   }
+  if (ticket.isCancelled) {
+    throw new Error("這張票券已經取消報名，無法報到");
+  }
 
   const userRef = doc(db, "users", ticket.userId);
   const userSnap = await getDoc(userRef);
