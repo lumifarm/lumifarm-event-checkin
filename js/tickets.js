@@ -39,6 +39,12 @@ export function renderTicketQRCode(containerEl, ticket) {
   });
 }
 
+export function paymentStatusLabel(status) {
+  if (status === "paid") return { text: "已繳費", cls: "badge-green" };
+  if (status === "pending") return { text: "待確認中", cls: "badge-yellow" };
+  return { text: "尚未繳費", cls: "badge-gray" };
+}
+
 export async function getMyStats() {
   const user = auth.currentUser;
   if (!user) return { total: 0, attended: 0, rate: 0 };

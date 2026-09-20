@@ -35,9 +35,19 @@ firestore.rules         Firestore 安全性規則
 | --- | --- |
 | `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, createdAt |
 | `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), currentCount (number) |
-| `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"paid"), isCheckedIn (bool), checkedInAt, securityCode, createdAt |
+| `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, securityCode, createdAt |
 | `reviews/{reviewId}` | userId, eventId, rating (1-5), comment, createdAt |
 | `admins/{uid}` | 只要文件存在即代表該使用者是主辦方（可放任意欄位，例如 `{ addedAt: ... }`） |
+
+## 繳費流程
+
+`js/payment.js` 裡的 `BANK_INFO` 存放要顯示給報名者看的匯款帳戶（銀行、帳號、戶名），要換帳戶直接改這個常數即可。流程是：
+
+1. 使用者在「我的票券」看到未繳費的票券時，會顯示匯款資訊與「我已完成匯款，通知確認」按鈕。
+2. 按下按鈕後，票券的 `paymentStatus` 會改成 `pending`（待確認），同時開啟使用者自己信箱軟體的寄信視窗（`mailto:` 連結），預填收件人 `info@lumifarm.org`、活動與金額資訊，使用者按送出後主辦方就會收到通知信。
+3. 主辦方在「報到管理」頁面下方會看到「待確認繳費」清單，核對匯款紀錄後按「確認已收款」，票券才會變成 `paid`。
+
+規則上刻意只允許本人把狀態改成 `pending`、不能直接改成 `paid`，避免有人謊報已繳費。
 
 ## Firebase 後台設定步驟
 

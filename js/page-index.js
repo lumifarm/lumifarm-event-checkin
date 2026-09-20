@@ -2,6 +2,7 @@ import { auth } from "./firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { initNavbar } from "./nav.js";
 import { listEvents, registerForEvent, getMyTicketForEvent } from "./events.js";
+import { paymentStatusLabel } from "./tickets.js";
 
 initNavbar();
 
@@ -40,11 +41,8 @@ async function render() {
       if (!user) {
         actionHtml = `<button class="btn-disabled" disabled>請先登入</button>`;
       } else if (ticket) {
-        const payBadge =
-          ticket.paymentStatus === "paid"
-            ? `<span class="badge badge-green">已繳費</span>`
-            : `<span class="badge badge-yellow">未繳費</span>`;
-        actionHtml = `<div class="flex items-center gap-2"><span class="badge badge-blue">已報名</span>${payBadge}</div>`;
+        const pay = paymentStatusLabel(ticket.paymentStatus);
+        actionHtml = `<div class="flex items-center gap-2"><span class="badge badge-blue">已報名</span><span class="badge ${pay.cls}">${pay.text}</span></div>`;
       } else if (full) {
         actionHtml = `<button class="btn-disabled" disabled>名額已滿</button>`;
       } else {
