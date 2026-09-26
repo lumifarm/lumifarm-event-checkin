@@ -108,6 +108,7 @@ export async function listCheckedInTickets(eventId) {
 export async function createEvent(data) {
   return addDoc(collection(db, "events"), {
     title: data.title,
+    summary: data.summary || null,
     description: data.description || "",
     location: data.location || "",
     instructor: data.instructor || null,
@@ -125,6 +126,7 @@ export async function createEvent(data) {
 export async function updateEvent(eventId, data) {
   await updateDoc(doc(db, "events", eventId), {
     title: data.title,
+    summary: data.summary || null,
     description: data.description || "",
     location: data.location || "",
     instructor: data.instructor || null,

@@ -34,6 +34,9 @@ import { awardPoints, awardPointsToCheckedInParticipants, listPointsHistoryForUs
 import { listEligibleForCoupons, issuePendingCoupons, DISCOUNT_PERCENT, ATTENDANCE_THRESHOLD } from "../discounts.js";
 import { courseStatusText, COURSE_CONFIRM_DAYS_BEFORE } from "../courseStatus.js";
 
+const SUMMARY_MAX_CHARS = 200;
+const DESCRIPTION_MAX_CHARS = 500;
+
 function formatDate(ts) {
   if (!ts) return "時間未定";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -124,8 +127,18 @@ export function renderAdmin(container) {
               <input id="ev-title" type="text" required class="w-full border rounded-lg p-2" />
             </div>
             <div>
-              <label class="text-sm text-gray-600 block mb-1">活動說明</label>
-              <textarea id="ev-description" rows="3" class="w-full border rounded-lg p-2"></textarea>
+              <label class="text-sm text-gray-600 block mb-1">
+                活動簡介（${SUMMARY_MAX_CHARS} 字以內，顯示在活動列表）
+                <span id="ev-summary-count" class="text-xs text-gray-400 ml-1"></span>
+              </label>
+              <textarea id="ev-summary" rows="3" class="w-full border rounded-lg p-2"></textarea>
+            </div>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">
+                活動內容（${DESCRIPTION_MAX_CHARS} 字以內，顯示在活動詳情頁）
+                <span id="ev-description-count" class="text-xs text-gray-400 ml-1"></span>
+              </label>
+              <textarea id="ev-description" rows="8" class="w-full border rounded-lg p-2"></textarea>
             </div>
             <div>
               <label class="text-sm text-gray-600 block mb-1">地點</label>
@@ -425,6 +438,7 @@ export function renderAdmin(container) {
   const posterPreview = container.querySelector("#ev-poster-preview");
   const fields = {
     title: container.querySelector("#ev-title"),
+    summary: container.querySelector("#ev-summary"),
     description: container.querySelector("#ev-description"),
     location: container.querySelector("#ev-location"),
     instructor: container.querySelector("#ev-instructor"),
@@ -482,6 +496,27 @@ export function renderAdmin(container) {
   posterPreview.addEventListener("error", () => posterPreview.classList.add("hidden"));
   fields.posterUrl.addEventListener("input", () => showPosterPreview(fields.posterUrl.value.trim()));
 
+  const summaryCountEl = container.querySelector("#ev-summary-count");
+  const descriptionCountEl = container.querySelector("#ev-description-count");
+
+  // 用 Array.from 算字數：中文、emoji 都算一個字，跟一般人理解的「字數」一致。
+  function charCount(text) {
+    return Array.from(text.trim()).length;
+  }
+  function renderCount(el, text, max) {
+    const n = charCount(text);
+    el.textContent = `${n} / ${max}`;
+    el.classList.toggle("text-red-600", n > max);
+    el.classList.toggle("font-bold", n > max);
+  }
+  function updateCharCounts() {
+    renderCount(summaryCountEl, fields.summary.value, SUMMARY_MAX_CHARS);
+    renderCount(descriptionCountEl, fields.description.value, DESCRIPTION_MAX_CHARS);
+  }
+  fields.summary.addEventListener("input", updateCharCounts);
+  fields.description.addEventListener("input", updateCharCounts);
+  updateCharCounts();
+
   function resetForm() {
     editingEventId = null;
     eventForm.reset();
@@ -491,12 +526,15 @@ export function renderAdmin(container) {
     cancelBtn.classList.add("hidden");
     showPosterPreview(null);
     setCheckedTags([]);
+    updateCharCounts();
   }
 
   function startEdit(ev) {
     editingEventId = ev.id;
     fields.title.value = ev.title || "";
+    fields.summary.value = ev.summary || "";
     fields.description.value = ev.description || "";
+    updateCharCounts();
     fields.location.value = ev.location || "";
     fields.instructor.value = ev.instructor || "";
     const d = ev.date?.toDate ? ev.date.toDate() : ev.date ? new Date(ev.date) : new Date();
@@ -520,6 +558,7 @@ export function renderAdmin(container) {
     e.preventDefault();
     const data = {
       title: fields.title.value.trim(),
+      summary: fields.summary.value.trim() || null,
       description: fields.description.value.trim(),
       location: fields.location.value.trim(),
       instructor: fields.instructor.value.trim() || null,
@@ -537,6 +576,14 @@ export function renderAdmin(container) {
     }
     if (data.minCap && data.maxCap && data.minCap > data.maxCap) {
       alert("最低開課人數不能大於名額上限");
+      return;
+    }
+    if (charCount(data.summary || "") > SUMMARY_MAX_CHARS) {
+      alert(`活動簡介請控制在 ${SUMMARY_MAX_CHARS} 字以內（目前 ${charCount(data.summary)} 字）`);
+      return;
+    }
+    if (charCount(data.description) > DESCRIPTION_MAX_CHARS) {
+      alert(`活動內容請控制在 ${DESCRIPTION_MAX_CHARS} 字以內（目前 ${charCount(data.description)} 字）`);
       return;
     }
 

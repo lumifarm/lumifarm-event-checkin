@@ -18,6 +18,8 @@
 - **依身分顯示導覽列**：「報到管理」「主辦專區」只有登入的主辦方帳號看得到，一般會員或未登入的訪客不會看到這兩個連結（實際權限仍然由 Firestore 規則把關，這裡只是避免介面雜訊）。
 - **取消報名（需主辦方審核）**：報名成功後直接跳到「我的票券」引導完成繳費；還沒報到的票券可以在「我的票券」申請取消，取消前會顯示退款須知並依距離活動天數試算退款比例，送出後進入「審核中」，要主辦方在「主辦專區」核准才會真的取消、退還名額；駁回的話活動照常進行、不退費。
 - **報名前問卷（選填）**：新增/編輯活動時可以填一個「報名前需要回答的問題」，有填的話會員按「立即報名」會先跳出視窗要求回答，答了才會真的送出報名；沒填就跟以前一樣直接報名，不影響其他活動。主辦專區的「報名問題回覆」可以選活動查看所有人的回覆。
+- **活動簡介與活動內容分開**：活動列表只顯示「活動簡介」（200 字以內）並附上「📖 查看完整活動內容」連結，完整「活動內容」（500 字以內）在活動詳情頁；主辦專區表單有即時字數統計，超過字數會擋下儲存。舊活動還沒填簡介時，列表會先截取活動內容前 80 字代替。
+- **活動詳情頁可以直接報名**：詳情頁下方有跟活動列表一樣的報名區塊（`js/registerAction.js` 共用同一套邏輯），會顯示登入、報名、繳費狀態。
 - **最低開課人數（選填）**：新增/編輯活動時可以填「最低開課人數」。活動前 7 天是開課確認日（跟取消退費的 7 天門檻對齊，常數在 `js/courseStatus.js` 的 `COURSE_CONFIRM_DAYS_BEFORE`）：確認日前人數不足顯示「⏳ 招生中：還差 N 人成團」；一達到最低人數就顯示「✅ 確定開課」；過了確認日還不足就顯示「❌ 未達開課人數，本活動不開課」並關閉報名。狀態是用活動日期與目前報名人數即時算出來的，不另外存資料庫。未開課要退款給已報名的人，請主辦方自己留意活動管理列表上的狀態並處理退款。
 - **手機版漢堡選單**：導覽列在手機寬度下會收成漢堡選單（右上角按鈕點開/收起），點任一連結會自動收起選單；桌機寬度維持原本橫向排列，不受影響。
 - **FAQ／常見問題頁面**：`#/faq`，整理登入、繳費、取消、報到、評價等常見問題的問答，導覽列有「常見問題」連結。
@@ -54,6 +56,7 @@ js/workPoints.js          換工點數的讀取、發放/扣點、歷史紀錄
 js/discounts.js           出席折扣券的門檻計算、核發、讀取
 js/notify.js              用 EmailJS 從瀏覽器直接發信通知主辦方（繳費/取消申請）
 js/courseStatus.js        最低開課人數的開課狀態計算（招生中／確定開課／不開課）
+js/registerAction.js      活動列表卡片與活動詳情頁共用的報名區塊（按鈕、報名/繳費狀態、報名前問卷）
 js/views/*.js             各路由畫面：把 HTML 畫進傳入的容器、回傳 cleanup 函式
 js/views/faq-view.js      常見問題頁面（純靜態問答內容）
 js/views/profile-view.js  資料維護頁面（#/profile）
@@ -65,7 +68,7 @@ firestore.rules           Firestore 安全性規則
 | Collection | 欄位 |
 | --- | --- |
 | `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, cancelledEvents, createdAt, realName（真實姓名，可省略表示未填）, nationalId（身分證字號，可省略表示未填）, birthDate（出生年月日字串 YYYY-MM-DD，可省略表示未填）, workPoints（換工點數餘額，number，可省略表示 0，只有主辦方能寫）, regularAttendedCount（number，可省略表示 0，只算「非換工活動」的出席次數，用來算折扣券門檻，只有主辦方能寫） |
-| `events/{eventId}` | title, description, date (Timestamp), location, instructor（string，可省略，講師資訊，例如「光農合作社群創辦人 林奕衡」）, price (number), maxCap (number, 可省略表示不限), minCap（number，可省略，最低開課人數）, currentCount (number), posterUrl (string, 可省略), tags (string[], 值對應 `js/tags.js` 的 `EVENT_TAGS` id), registrationQuestion（string，可省略，報名前要回答的問題，沒填就不會跳出問答視窗） |
+| `events/{eventId}` | title, summary（string，可省略，活動簡介，200 字以內，顯示在活動列表；沒填時列表會截取 description 前 80 字代替）, description（活動內容，500 字以內，顯示在活動詳情頁）, date (Timestamp), location, instructor（string，可省略，講師資訊，例如「光農合作社群創辦人 林奕衡」）, price (number), maxCap (number, 可省略表示不限), minCap（number，可省略，最低開課人數）, currentCount (number), posterUrl (string, 可省略), tags (string[], 值對應 `eventTags` collection 的文件 id), registrationQuestion（string，可省略，報名前要回答的問題，沒填就不會跳出問答視窗） |
 | `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, cancelRequestStatus ("pending"/"approved"/null), cancelRequestedAt, cancelRefundPercent, securityCode, createdAt, workPointsAwarded（bool，可省略，這張票券是否已經因為某場換工活動被一鍵發放過點數，避免重複發放）, discountApplied（bool，可省略，這張票券報名當下是否套用了出席折扣券）, couponId（string，可省略，套用的那張折扣券 id）, registrationAnswer（string，可省略，報名當下對 registrationQuestion 的回覆） |
 | `reviews/{reviewId}` | userId, eventId, rating (1-5), comment, createdAt |
 | `eventTags/{tagId}` | label（標籤名稱）, icon（emoji）, color（`js/tags.js` 的 `TAG_COLORS` 之一，對應 `css/style.css` 的 `.badge-tag-*`）, order（排序用數字）。所有人可讀，只有主辦方能寫。 |
@@ -149,7 +152,8 @@ Firebase 現在新專案的 Cloud Storage 預設要升級 Blaze（付費）方�
 
 1. **Claude 專用帳號**：Firebase Authentication 啟用了 Email/Password 登入方式，有一個專用帳號（`claude-agent@lumifarm-event-checkin.firebaseapp.com`）被加進 `admins` collection。Claude 用這個帳號登入取得 ID Token，再用 Firestore REST API（帶 `Authorization: Bearer <idToken>`）直接呼叫，跟一般 admin 帳號透過網站操作走的是同一套 `firestore.rules`，完全不需要暫時放寬任何規則。
 2. **兩種來源**：
-   - 主辦方直接把活動資訊（標題、說明、地點、日期時間、費用、名額上限、標籤）跟海報圖片交給 Claude。
+   - 主辦方直接把活動資訊（標題、簡介、內容、講師、地點、日期時間、費用、名額上限/最低開課人數、標籤）跟海報圖片交給 Claude。
+   - 簡介（`summary`，200 字以內）跟內容（`description`，500 字以內）要分開寫：主辦方只給一整段文字時，Claude 從中濃縮出簡介、其餘放內容，並在回報時請主辦方確認。
    - 主辦方只給日期或時間區間，Claude 用已連接的 Google 行事曆去查（`青諮委`、`主聯合作社相關活動`等 calendar 都在存取範圍內），找到符合的活動後用行事曆上的標題、時間、地點直接建立。
 3. 建立完成後 Claude 會回報活動內容給主辦方確認，缺少的欄位（例如費用、標籤）會先用預設值（通常是免費、不限名額、不選標籤）並在回報時特別標註，主辦方確認錯誤的話再請 Claude 修改。
 
