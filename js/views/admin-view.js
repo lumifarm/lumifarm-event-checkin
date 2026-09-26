@@ -14,6 +14,8 @@ import {
   listPendingCancellations,
   approveCancellation,
   rejectCancellation,
+  listActiveTicketsForEvent,
+  adminForceCancelTicket,
 } from "../events.js";
 import { listAllUsers } from "../tickets.js";
 import { buildPreEventNotice, buildGmailComposeLink } from "../notices.js";
@@ -111,6 +113,7 @@ export function renderAdmin(container) {
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="tags-section">活動標籤管理</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="payments-section">待確認繳費</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="cancellations-section">取消申請</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="roster-section">報名名單／強制取消</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="users-section">會員總覽</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="notice-section">行前通知</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="insurance-section">投保名單</button>
@@ -255,6 +258,21 @@ export function renderAdmin(container) {
         <section id="cancellations-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">取消申請</h2>
           <div id="pending-cancellations" class="space-y-3"></div>
+        </section>
+
+        <section id="roster-section">
+          <h2 class="text-lg font-bold text-gray-800 mb-3">報名名單／強制取消</h2>
+          <div class="card rounded-xl p-5 space-y-3">
+            <p class="text-xs text-gray-500">
+              選一個活動查看目前有效的報名者，可以把單一會員的報名強制取消（例如重複報名、資格不符、主辦方需要調整名額）。強制取消會釋出名額、把用掉的折扣券還給會員，不會算進會員自己的取消次數；已報到的會員不能取消。退款請依選擇的比例自行匯回給會員。
+            </p>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">選擇活動</label>
+              <select id="roster-event" class="w-full border rounded-lg p-2"></select>
+            </div>
+            <p id="roster-summary" class="text-sm text-gray-500"></p>
+            <div id="roster-list" class="space-y-3"></div>
+          </div>
         </section>
 
         <section id="users-section">
@@ -902,6 +920,140 @@ export function renderAdmin(container) {
     window.open(url, "_blank");
   });
 
+  const rosterEventSelect = container.querySelector("#roster-event");
+  const rosterSummaryEl = container.querySelector("#roster-summary");
+  const rosterListEl = container.querySelector("#roster-list");
+
+  let rosterEventsCache = [];
+
+  async function populateRosterEventSelect() {
+    rosterEventsCache = await listEvents();
+    rosterEventSelect.innerHTML = rosterEventsCache
+      .map((ev) => `<option value="${ev.id}">${ev.title || "（未命名活動）"}（${formatDate(ev.date)}）</option>`)
+      .join("");
+    // 預設選最近一場還沒結束的活動，比較常用
+    const now = Date.now();
+    const upcoming = rosterEventsCache.find((ev) => (ev.date?.toMillis?.() ?? 0) >= now);
+    if (upcoming) rosterEventSelect.value = upcoming.id;
+    await renderRoster();
+  }
+
+  const ROSTER_PAYMENT_TEXT = { paid: "已繳費", pending: "待確認匯款", unpaid: "未繳費" };
+
+  function renderRosterRow(t, ev) {
+    const row = document.createElement("div");
+    row.className = "border rounded-lg p-3 flex flex-col md:flex-row md:items-center gap-3";
+
+    const info = document.createElement("div");
+    info.className = "flex-1 min-w-0";
+    const who = document.createElement("p");
+    who.className = "font-bold text-gray-800";
+    who.textContent = t.user?.realName ? `${t.user.name || ""}（${t.user.realName}）` : t.user?.name || "未知使用者";
+    const email = document.createElement("p");
+    email.className = "text-sm text-gray-600 break-all";
+    email.textContent = t.user?.email || "";
+    const status = document.createElement("p");
+    status.className = "text-sm text-gray-500";
+    const isPaidEvent = Number(ev.price) > 0;
+    const parts = [
+      `報名時間：${formatDate(t.createdAt)}`,
+      isPaidEvent ? ROSTER_PAYMENT_TEXT[t.paymentStatus] || t.paymentStatus || "" : "免費活動",
+      t.isCheckedIn ? "已報到" : "未報到",
+    ];
+    if (t.discountApplied) parts.push("使用折扣券");
+    if (t.cancelRequestStatus === "pending") parts.push("會員已申請取消（審核中）");
+    status.textContent = parts.join("　");
+    info.append(who, email, status);
+
+    const actions = document.createElement("div");
+    actions.className = "flex flex-wrap items-center gap-2 shrink-0";
+
+    if (t.isCheckedIn) {
+      const note = document.createElement("span");
+      note.className = "text-xs text-gray-400";
+      note.textContent = "已報到，無法取消";
+      actions.appendChild(note);
+      row.append(info, actions);
+      return row;
+    }
+
+    // 只有「有付錢或宣稱已匯款」的票才需要選退款比例，其他一律 0%
+    const needsRefund = isPaidEvent && (t.paymentStatus === "paid" || t.paymentStatus === "pending");
+    let refundSelect = null;
+    if (needsRefund) {
+      refundSelect = document.createElement("select");
+      refundSelect.className = "border rounded-lg p-1 text-sm";
+      [
+        [100, "全額退款 100%"],
+        [50, "退款 50%"],
+        [0, "不退款"],
+      ].forEach(([v, label]) => {
+        const opt = document.createElement("option");
+        opt.value = String(v);
+        opt.textContent = label;
+        refundSelect.appendChild(opt);
+      });
+      actions.appendChild(refundSelect);
+    }
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "btn-danger text-sm";
+    cancelBtn.textContent = "強制取消";
+    cancelBtn.addEventListener("click", async () => {
+      const name = t.user?.name || "這位會員";
+      const refundPercent = refundSelect ? Number(refundSelect.value) : 0;
+      const reason = prompt(
+        `確定要取消「${name}」在「${ev.title || ""}」的報名嗎？\n` +
+          (needsRefund ? `退款比例：${refundPercent}%（請記得自行匯款退還）\n` : "") +
+          "\n可以輸入取消原因（會顯示在會員的「我的票券」），不填也可以，按「取消」則不執行：",
+        ""
+      );
+      if (reason === null) return;
+
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = "取消中...";
+      try {
+        await adminForceCancelTicket(t.id, { refundPercent, reason: reason.trim() });
+        await Promise.all([renderRoster(), renderEventList(), renderPendingCancellations()]);
+      } catch (e) {
+        alert("強制取消失敗：" + e.message);
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = "強制取消";
+      }
+    });
+    actions.appendChild(cancelBtn);
+
+    row.append(info, actions);
+    return row;
+  }
+
+  async function renderRoster() {
+    const ev = rosterEventsCache.find((e) => e.id === rosterEventSelect.value);
+    rosterListEl.innerHTML = "";
+    if (!ev) {
+      rosterSummaryEl.textContent = "目前沒有任何活動";
+      return;
+    }
+    rosterSummaryEl.textContent = "載入中...";
+    try {
+      const tickets = await listActiveTicketsForEvent(ev.id);
+      rosterSummaryEl.textContent = `目前有效報名：${tickets.length} 人${ev.maxCap ? `／名額 ${ev.maxCap}` : ""}`;
+      if (tickets.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "text-gray-500 text-sm";
+        empty.textContent = "這個活動目前沒有有效的報名者";
+        rosterListEl.appendChild(empty);
+        return;
+      }
+      tickets.forEach((t) => rosterListEl.appendChild(renderRosterRow(t, ev)));
+    } catch (e) {
+      rosterSummaryEl.textContent = "載入報名名單失敗：" + e.message;
+    }
+  }
+
+  rosterEventSelect.addEventListener("change", renderRoster);
+
   const insuranceEventSelect = container.querySelector("#insurance-event");
   const insuranceGenerateBtn = container.querySelector("#insurance-generate");
   const insuranceOutput = container.querySelector("#insurance-output");
@@ -1409,6 +1561,7 @@ export function renderAdmin(container) {
     await refreshTags();
     renderPendingPayments();
     renderPendingCancellations();
+    populateRosterEventSelect();
     renderUsersOverview();
     populateNoticeEventSelect();
     populateInsuranceEventSelect();

@@ -14,6 +14,10 @@ function formatDate(ts) {
   return d.toLocaleString("zh-TW", { dateStyle: "medium", timeStyle: "short" });
 }
 
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
 function eventDateOf(t) {
   const raw = t.event?.date;
   if (!raw) return null;
@@ -212,9 +216,14 @@ export function renderTickets(container) {
         }</h3>
         <p class="text-sm text-gray-500">${formatDate(t.event?.date)} · ${t.event?.location || ""}</p>
         <div class="flex flex-wrap gap-2 mt-2">
-          <span class="badge badge-red">已取消</span>
+          <span class="badge badge-red">${t.cancelledBy === "admin" ? "已由主辦單位取消" : "已取消"}</span>
         </div>
-        <p class="text-sm text-gray-500 mt-2">退款比例：${t.refundPercent ?? 0}%</p>
+        ${t.cancelledBy === "admin" && t.cancelReason ? `<p class="text-sm text-gray-600 mt-2">取消原因：${escapeHtml(t.cancelReason)}</p>` : ""}
+        ${
+          t.cancelledBy === "admin" && !t.refundPercent
+            ? ""
+            : `<p class="text-sm text-gray-500 mt-2">退款比例：${t.refundPercent ?? 0}%</p>`
+        }
       </div>`;
     }
 

@@ -340,6 +340,57 @@ export async function approveCancellation(ticketId) {
   await batch.commit();
 }
 
+// 給主辦專區「報名名單／強制取消」用：某活動目前還算數（未取消）的票券，
+// 附上報名人的名字與 Email，依報名時間排序（在前端排，避免需要複合索引）。
+export async function listActiveTicketsForEvent(eventId) {
+  const q = query(collection(db, "tickets"), where("eventId", "==", eventId));
+  const snap = await getDocs(q);
+  const tickets = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((t) => !t.isCancelled);
+  tickets.sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+
+  return Promise.all(
+    tickets.map(async (t) => {
+      const userSnap = await getDoc(doc(db, "users", t.userId));
+      return { ...t, user: userSnap.exists() ? userSnap.data() : null };
+    })
+  );
+}
+
+// 主辦方強制取消某人的報名：跟核准取消一樣釋出名額，但
+// - 退款比例由主辦方當下決定（主辦方主動取消，通常是全額退款）
+// - 不算進會員自己的「取消次數」，因為不是會員自己要取消的
+// - 報名時用掉的 95 折折扣券還給會員，下次報名可以再用
+// - 已報到的票券不能取消（人都來了，出席紀錄也已經算進去了）
+// 取消後會員之後仍可以重新報名（Firestore 規則原本就允許重新啟用已取消的票券）。
+export async function adminForceCancelTicket(ticketId, { refundPercent, reason }) {
+  const ticketRef = doc(db, "tickets", ticketId);
+  const ticketSnap = await getDoc(ticketRef);
+  if (!ticketSnap.exists()) throw new Error("找不到這張票券");
+  const ticket = ticketSnap.data();
+  if (ticket.isCancelled) throw new Error("這張票券已經是取消狀態");
+  if (ticket.isCheckedIn) throw new Error("這位會員已經報到，不能取消");
+
+  const batch = writeBatch(db);
+  batch.update(ticketRef, {
+    isCancelled: true,
+    cancelledAt: serverTimestamp(),
+    refundPercent: refundPercent ?? 0,
+    cancelledBy: "admin",
+    cancelReason: reason || "",
+    // 如果會員剛好有待審核的取消申請，一併結案，避免還留在「取消申請」列表
+    ...(ticket.cancelRequestStatus === "pending" ? { cancelRequestStatus: "approved" } : {}),
+  });
+  batch.update(doc(db, "events", ticket.eventId), { currentCount: increment(-1) });
+  if (ticket.discountApplied && ticket.couponId) {
+    batch.update(doc(db, "discountCoupons", ticket.couponId), {
+      status: "unused",
+      usedAt: null,
+      usedTicketId: null,
+    });
+  }
+  await batch.commit();
+}
+
 // 主辦方駁回取消：票券完全恢復正常，使用者可以之後再重新申請一次
 export async function rejectCancellation(ticketId) {
   await updateDoc(doc(db, "tickets", ticketId), {
