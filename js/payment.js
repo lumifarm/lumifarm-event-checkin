@@ -12,7 +12,7 @@ import {
 
 export const BANK_INFO = {
   bankName: "永豐銀行 (807)",
-  account: "203-018-001951-8",
+  account: "20301800119518",
   accountName: "林奕衡",
 };
 
