@@ -20,6 +20,7 @@ import { buildPreEventNotice, buildGmailComposeLink } from "../notices.js";
 import { EVENT_TAGS, renderTagBadgesHtml } from "../tags.js";
 import { awardPoints, awardPointsToCheckedInParticipants, listPointsHistoryForUser } from "../workPoints.js";
 import { listEligibleForCoupons, issuePendingCoupons, DISCOUNT_PERCENT, ATTENDANCE_THRESHOLD } from "../discounts.js";
+import { courseStatusText, COURSE_CONFIRM_DAYS_BEFORE } from "../courseStatus.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -127,10 +128,19 @@ export function renderAdmin(container) {
                 <input id="ev-price" type="number" min="0" value="0" class="w-full border rounded-lg p-2" />
               </div>
             </div>
-            <div>
-              <label class="text-sm text-gray-600 block mb-1">名額上限（留空表示不限）</label>
-              <input id="ev-maxcap" type="number" min="1" class="w-full border rounded-lg p-2" />
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-sm text-gray-600 block mb-1">最低開課人數（選填）</label>
+                <input id="ev-mincap" type="number" min="1" class="w-full border rounded-lg p-2" />
+              </div>
+              <div>
+                <label class="text-sm text-gray-600 block mb-1">名額上限（留空表示不限）</label>
+                <input id="ev-maxcap" type="number" min="1" class="w-full border rounded-lg p-2" />
+              </div>
             </div>
+            <p class="text-xs text-gray-500 -mt-1">
+              有填最低開課人數的話，活動前 ${COURSE_CONFIRM_DAYS_BEFORE} 天為開課確認日：到那天報名人數還不足就會自動顯示「不開課」並關閉報名；不填就不顯示開課狀態。
+            </p>
             <div>
               <label class="text-sm text-gray-600 block mb-1">活動標籤（可複選）</label>
               <div id="ev-tags" class="flex flex-wrap gap-3 text-sm">
@@ -376,6 +386,7 @@ export function renderAdmin(container) {
     date: container.querySelector("#ev-date"),
     price: container.querySelector("#ev-price"),
     maxCap: container.querySelector("#ev-maxcap"),
+    minCap: container.querySelector("#ev-mincap"),
     posterUrl: container.querySelector("#ev-poster-url"),
     registrationQuestion: container.querySelector("#ev-registration-question"),
   };
@@ -425,6 +436,7 @@ export function renderAdmin(container) {
     fields.date.value = toDatetimeLocalValue(d);
     fields.price.value = ev.price || 0;
     fields.maxCap.value = ev.maxCap || "";
+    fields.minCap.value = ev.minCap || "";
     fields.posterUrl.value = ev.posterUrl || "";
     fields.registrationQuestion.value = ev.registrationQuestion || "";
     showPosterPreview(ev.posterUrl || null);
@@ -446,12 +458,17 @@ export function renderAdmin(container) {
       date: fields.date.value ? new Date(fields.date.value) : null,
       price: Number(fields.price.value) || 0,
       maxCap: fields.maxCap.value.trim() === "" ? null : Number(fields.maxCap.value),
+      minCap: fields.minCap.value.trim() === "" ? null : Number(fields.minCap.value),
       posterUrl: fields.posterUrl.value.trim() || null,
       registrationQuestion: fields.registrationQuestion.value.trim() || null,
       tags: getCheckedTags(),
     };
     if (!data.title || !data.date) {
       alert("請填寫活動名稱與日期時間");
+      return;
+    }
+    if (data.minCap && data.maxCap && data.minCap > data.maxCap) {
+      alert("最低開課人數不能大於名額上限");
       return;
     }
 
@@ -491,6 +508,13 @@ export function renderAdmin(container) {
     detail.className = "text-sm text-gray-500";
     detail.textContent = `${formatDate(ev.date)} · ${ev.location || ""} · 名額 ${ev.currentCount || 0}/${ev.maxCap || "不限"}`;
     info.append(title, detail);
+    const statusText = courseStatusText(ev);
+    if (statusText) {
+      const statusEl = document.createElement("p");
+      statusEl.className = "text-sm font-bold text-gray-700 mt-1";
+      statusEl.textContent = statusText;
+      info.appendChild(statusEl);
+    }
     if (ev.tags && ev.tags.length > 0) {
       const tagsEl = document.createElement("div");
       tagsEl.className = "flex flex-wrap gap-1 mt-1";

@@ -6,6 +6,7 @@ import { renderTagBadgesHtml, EVENT_TAGS } from "../tags.js";
 import { getMyProfile, isProfileComplete } from "../profile.js";
 import { getMyCoupons } from "../discounts.js";
 import { notifyAdmin } from "../notify.js";
+import { getCourseStatus, courseStatusHtml } from "../courseStatus.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -74,20 +75,20 @@ function showQuestionModal({ question, onSubmit }) {
 
 export function renderEvents(container) {
   container.innerHTML = `
-    <div class="max-w-5xl mx-auto">
-      <div class="hero-banner rounded-2xl p-6 sm:p-8 mb-6 text-white">
-        <h1 class="relative text-2xl sm:text-3xl font-bold mb-1">🌾 近期活動</h1>
-        <p class="relative text-sm text-white/90">在陽光與土地之間，與光農合作社群一起學習、耕作、成長</p>
+    <div class="max-w-7xl mx-auto">
+      <div class="hero-banner rounded-2xl p-6 sm:p-10 mb-6 text-white">
+        <h1 class="relative text-2xl sm:text-4xl font-bold mb-2">🌾 近期活動</h1>
+        <p class="relative text-sm sm:text-lg text-white/90">在陽光與土地之間，與光農合作社群一起學習、耕作、成長</p>
       </div>
       <div id="profile-incomplete-banner" class="hidden bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-lg p-3 mb-4">
         活動需要幫參加者投保，報名前請先<a href="#/profile" class="underline font-bold">到「資料維護」填寫真實姓名、身分證字號、出生年月日</a>。
       </div>
       <div id="coupon-banner" class="hidden bg-lime-50 border border-lime-300 text-lime-800 text-sm rounded-lg p-3 mb-4"></div>
       <div id="tag-filter" class="flex flex-wrap gap-2 mb-4"></div>
-      <div id="event-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      <div id="event-list" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
 
-      <h2 id="past-events-heading" class="hidden text-xl font-bold text-gray-500 mt-10 mb-4">過往活動</h2>
-      <div id="past-event-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      <h2 id="past-events-heading" class="hidden text-2xl font-bold text-gray-500 mt-12 mb-4">過往活動</h2>
+      <div id="past-event-list" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
     </div>`;
 
   const listEl = container.querySelector("#event-list");
@@ -125,28 +126,31 @@ export function renderEvents(container) {
       </div>`;
     } else if (isPast) {
       actionHtml = `<button class="btn-disabled" disabled>活動已結束</button>`;
+    } else if (getCourseStatus(ev)?.state === "cancelled") {
+      actionHtml = `<button class="btn-disabled" disabled>未達開課人數</button>`;
     } else if (full) {
       actionHtml = `<button class="btn-disabled" disabled>名額已滿</button>`;
     } else {
-      actionHtml = `<button data-event-id="${ev.id}" class="btn-register btn-primary">立即報名</button>`;
+      actionHtml = `<button data-event-id="${ev.id}" class="btn-register btn-primary text-base px-6 py-2.5">立即報名</button>`;
     }
 
     const posterHtml = ev.posterUrl
-      ? `<img src="${ev.posterUrl}" alt="" class="w-full h-40 object-cover rounded-lg" />`
+      ? `<img src="${ev.posterUrl}" alt="" class="w-full h-56 md:h-72 object-cover rounded-lg" />`
       : "";
 
     return `
-      <div class="card rounded-xl p-5 flex flex-col gap-3 ${isPast ? "opacity-75" : ""}">
+      <div class="card rounded-2xl p-6 md:p-8 flex flex-col gap-4 ${isPast ? "opacity-75" : ""}">
         ${posterHtml}
-        <h3 class="text-lg font-bold text-gray-800">
+        <h3 class="text-xl md:text-2xl font-bold text-gray-800">
           <a href="#/event?id=${ev.id}" class="hover:underline">${ev.title || ""}</a>
         </h3>
-        ${ev.tags && ev.tags.length > 0 ? `<div class="flex flex-wrap gap-1">${renderTagBadgesHtml(ev.tags)}</div>` : ""}
-        <p class="text-sm text-gray-500">${formatDate(ev.date)} · ${ev.location || ""}</p>
-        <p class="text-sm text-gray-600 flex-1">${ev.description || ""}</p>
-        <div class="flex items-center justify-between text-sm text-gray-500">
+        ${ev.tags && ev.tags.length > 0 ? `<div class="flex flex-wrap gap-2">${renderTagBadgesHtml(ev.tags)}</div>` : ""}
+        <p class="text-sm md:text-base text-gray-500">${formatDate(ev.date)} · ${ev.location || ""}</p>
+        <p class="text-sm md:text-base text-gray-600 leading-relaxed flex-1">${ev.description || ""}</p>
+        ${courseStatusHtml(ev)}
+        <div class="flex items-center justify-between text-sm md:text-base text-gray-500">
           <span>費用：${ev.price ? `NT$${ev.price}` : "免費"}</span>
-          <span>名額：${ev.currentCount || 0}/${ev.maxCap || "不限"}</span>
+          <span>名額：${ev.currentCount || 0}/${ev.maxCap || "不限"}${ev.minCap ? `（最低 ${ev.minCap} 人開課）` : ""}</span>
         </div>
         <div>${actionHtml}</div>
       </div>`;

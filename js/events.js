@@ -15,6 +15,7 @@ import {
   serverTimestamp,
   increment,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { getCourseStatus } from "./courseStatus.js";
 
 // 取消政策的退款比例：活動開始前 >=7 天全額（會另外扣轉帳手續費）、
 // 3~6 天內 50%、少於 3 天不退款。天數用「事件日期 - 現在」計算。
@@ -112,6 +113,7 @@ export async function createEvent(data) {
     date: data.date,
     price: data.price || 0,
     maxCap: data.maxCap ?? null,
+    minCap: data.minCap ?? null,
     posterUrl: data.posterUrl || null,
     tags: data.tags || [],
     registrationQuestion: data.registrationQuestion || null,
@@ -127,6 +129,7 @@ export async function updateEvent(eventId, data) {
     date: data.date,
     price: data.price || 0,
     maxCap: data.maxCap ?? null,
+    minCap: data.minCap ?? null,
     posterUrl: data.posterUrl || null,
     tags: data.tags || [],
     registrationQuestion: data.registrationQuestion || null,
@@ -210,6 +213,9 @@ export async function registerForEvent(eventId, registrationAnswer) {
     const currentCount = event.currentCount || 0;
     if (event.maxCap && currentCount >= event.maxCap) {
       throw new Error("活動名額已滿");
+    }
+    if (getCourseStatus(event)?.state === "cancelled") {
+      throw new Error("這場活動未達最低開課人數，已確定不開課");
     }
 
     // 免費活動（price 是 0 或沒填）沒有錢好收，直接視為已繳費，

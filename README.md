@@ -17,6 +17,7 @@
 - **依身分顯示導覽列**：「報到管理」「主辦專區」只有登入的主辦方帳號看得到，一般會員或未登入的訪客不會看到這兩個連結（實際權限仍然由 Firestore 規則把關，這裡只是避免介面雜訊）。
 - **取消報名（需主辦方審核）**：報名成功後直接跳到「我的票券」引導完成繳費；還沒報到的票券可以在「我的票券」申請取消，取消前會顯示退款須知並依距離活動天數試算退款比例，送出後進入「審核中」，要主辦方在「主辦專區」核准才會真的取消、退還名額；駁回的話活動照常進行、不退費。
 - **報名前問卷（選填）**：新增/編輯活動時可以填一個「報名前需要回答的問題」，有填的話會員按「立即報名」會先跳出視窗要求回答，答了才會真的送出報名；沒填就跟以前一樣直接報名，不影響其他活動。主辦專區的「報名問題回覆」可以選活動查看所有人的回覆。
+- **最低開課人數（選填）**：新增/編輯活動時可以填「最低開課人數」。活動前 7 天是開課確認日（跟取消退費的 7 天門檻對齊，常數在 `js/courseStatus.js` 的 `COURSE_CONFIRM_DAYS_BEFORE`）：確認日前人數不足顯示「⏳ 招生中：還差 N 人成團」；一達到最低人數就顯示「✅ 確定開課」；過了確認日還不足就顯示「❌ 未達開課人數，本活動不開課」並關閉報名。狀態是用活動日期與目前報名人數即時算出來的，不另外存資料庫。未開課要退款給已報名的人，請主辦方自己留意活動管理列表上的狀態並處理退款。
 - **手機版漢堡選單**：導覽列在手機寬度下會收成漢堡選單（右上角按鈕點開/收起），點任一連結會自動收起選單；桌機寬度維持原本橫向排列，不受影響。
 - **FAQ／常見問題頁面**：`#/faq`，整理登入、繳費、取消、報到、評價等常見問題的問答，導覽列有「常見問題」連結。
 - **投保個資（資料維護）**：活動需要幫參加者投保，點右上角自己的頭像/名稱會出現「資料維護」選項（`#/profile`），可以填寫並隨時修改真實姓名、身分證字號、出生年月日。這三個欄位沒填齊之前無法報名任何活動，報名按鈕會被 Firestore 規則擋下來並引導去補資料；主辦專區也能匯出某活動的投保名單（詳見下方「投保個資與投保名單」）。
@@ -51,6 +52,7 @@ js/profile.js             投保個資（真實姓名/身分證字號/出生年�
 js/workPoints.js          換工點數的讀取、發放/扣點、歷史紀錄
 js/discounts.js           出席折扣券的門檻計算、核發、讀取
 js/notify.js              用 EmailJS 從瀏覽器直接發信通知主辦方（繳費/取消申請）
+js/courseStatus.js        最低開課人數的開課狀態計算（招生中／確定開課／不開課）
 js/views/*.js             各路由畫面：把 HTML 畫進傳入的容器、回傳 cleanup 函式
 js/views/faq-view.js      常見問題頁面（純靜態問答內容）
 js/views/profile-view.js  資料維護頁面（#/profile）
@@ -62,7 +64,7 @@ firestore.rules           Firestore 安全性規則
 | Collection | 欄位 |
 | --- | --- |
 | `users/{uid}` | uid, name, email, photoURL, totalEvents, attendedEvents, cancelledEvents, createdAt, realName（真實姓名，可省略表示未填）, nationalId（身分證字號，可省略表示未填）, birthDate（出生年月日字串 YYYY-MM-DD，可省略表示未填）, workPoints（換工點數餘額，number，可省略表示 0，只有主辦方能寫）, regularAttendedCount（number，可省略表示 0，只算「非換工活動」的出席次數，用來算折扣券門檻，只有主辦方能寫） |
-| `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), currentCount (number), posterUrl (string, 可省略), tags (string[], 值對應 `js/tags.js` 的 `EVENT_TAGS` id), registrationQuestion（string，可省略，報名前要回答的問題，沒填就不會跳出問答視窗） |
+| `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), minCap（number，可省略，最低開課人數）, currentCount (number), posterUrl (string, 可省略), tags (string[], 值對應 `js/tags.js` 的 `EVENT_TAGS` id), registrationQuestion（string，可省略，報名前要回答的問題，沒填就不會跳出問答視窗） |
 | `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, cancelRequestStatus ("pending"/"approved"/null), cancelRequestedAt, cancelRefundPercent, securityCode, createdAt, workPointsAwarded（bool，可省略，這張票券是否已經因為某場換工活動被一鍵發放過點數，避免重複發放）, discountApplied（bool，可省略，這張票券報名當下是否套用了出席折扣券）, couponId（string，可省略，套用的那張折扣券 id）, registrationAnswer（string，可省略，報名當下對 registrationQuestion 的回覆） |
 | `reviews/{reviewId}` | userId, eventId, rating (1-5), comment, createdAt |
 | `workPointTransactions/{txId}` | userId, points（number，正數＝發放、負數＝兌換扣點）, reason（string，說明文字）, eventId（可省略）, createdAt, createdBy（登記的主辦方 uid） |

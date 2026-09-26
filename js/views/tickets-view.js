@@ -6,6 +6,7 @@ import { requestCancellation, calcRefundPercent } from "../events.js";
 import { getMyPointsBalance, getMyPointsHistory } from "../workPoints.js";
 import { getMyCoupons, DISCOUNT_PERCENT } from "../discounts.js";
 import { notifyAdmin } from "../notify.js";
+import { courseStatusHtml } from "../courseStatus.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -254,6 +255,7 @@ export function renderTickets(container) {
             </span>
             ${cancelPending ? `<span class="badge badge-yellow">取消審核中</span>` : ""}
           </div>
+          ${!isPast && courseStatusHtml(t.event) ? `<div class="mt-2">${courseStatusHtml(t.event)}</div>` : ""}
           ${workFormHtml}
           ${
             t.registrationAnswer

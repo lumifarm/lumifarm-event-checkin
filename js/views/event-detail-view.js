@@ -2,6 +2,7 @@ import { db } from "../firebase-config.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { currentQuery } from "../router.js";
 import { renderTagBadgesHtml } from "../tags.js";
+import { courseStatusHtml } from "../courseStatus.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -41,11 +42,12 @@ export async function renderEventDetail(container) {
       ${ev.tags && ev.tags.length > 0 ? `<div class="flex flex-wrap gap-1 mb-2">${renderTagBadgesHtml(ev.tags)}</div>` : ""}
       <p class="text-sm text-gray-500 mb-4">${formatDate(ev.date)} · ${ev.location || ""}</p>
       ${workFormHtml ? `<div class="mb-4">${workFormHtml}</div>` : ""}
+      ${courseStatusHtml(ev) ? `<div class="mb-4">${courseStatusHtml(ev)}</div>` : ""}
       <div class="card rounded-xl p-5 space-y-3">
         <p class="text-gray-700 whitespace-pre-wrap">${ev.description || "（尚無活動說明）"}</p>
         <div class="flex items-center justify-between text-sm text-gray-500 border-t pt-3">
           <span>費用：${ev.price ? `NT$${ev.price}` : "免費"}</span>
-          <span>名額：${ev.currentCount || 0}/${ev.maxCap || "不限"}</span>
+          <span>名額：${ev.currentCount || 0}/${ev.maxCap || "不限"}${ev.minCap ? `（最低 ${ev.minCap} 人開課）` : ""}</span>
         </div>
       </div>
       <button id="event-detail-back" type="button" class="inline-block mt-4 text-sm text-emerald-600 underline">
