@@ -151,6 +151,18 @@ h3 {
   background-color: #ecfccb;
   color: #4d7c0f;
 }
+.badge-tag-pink {
+  background-color: #fce7f3;
+  color: #be185d;
+}
+.badge-tag-orange {
+  background-color: #ffedd5;
+  color: #c2410c;
+}
+.badge-tag-gray {
+  background-color: #f1ece0;
+  color: #6b5d47;
+}
 
 .btn-danger {
   background-color: #c0432f;

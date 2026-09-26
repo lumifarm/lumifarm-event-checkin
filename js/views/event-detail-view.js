@@ -1,7 +1,7 @@
 import { db } from "../firebase-config.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { currentQuery } from "../router.js";
-import { renderTagBadgesHtml } from "../tags.js";
+import { renderTagBadgesHtml, loadTags } from "../tags.js";
 import { courseStatusHtml } from "../courseStatus.js";
 
 function formatDate(ts) {
@@ -20,7 +20,7 @@ export async function renderEventDetail(container) {
 
   container.innerHTML = `<p class="text-center text-gray-500 py-16">載入中...</p>`;
 
-  const snap = await getDoc(doc(db, "events", eventId));
+  const [snap] = await Promise.all([getDoc(doc(db, "events", eventId)), loadTags()]);
   if (!snap.exists()) {
     container.innerHTML = `<p class="max-w-md mx-auto text-center text-gray-500 py-16">找不到這個活動，可能已經被刪除。</p>`;
     return;

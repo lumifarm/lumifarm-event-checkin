@@ -17,7 +17,19 @@ import {
 } from "../events.js";
 import { listAllUsers } from "../tickets.js";
 import { buildPreEventNotice, buildGmailComposeLink } from "../notices.js";
-import { EVENT_TAGS, renderTagBadgesHtml } from "../tags.js";
+import {
+  renderTagBadgesHtml,
+  tagBadgeHtml,
+  getTags,
+  loadTags,
+  ensureDefaultTagsSeeded,
+  createTag,
+  updateTag,
+  deleteTag,
+  LABOR_EXCHANGE_TAG_ID,
+  TAG_COLORS,
+  TAG_ICON_CHOICES,
+} from "../tags.js";
 import { awardPoints, awardPointsToCheckedInParticipants, listPointsHistoryForUser } from "../workPoints.js";
 import { listEligibleForCoupons, issuePendingCoupons, DISCOUNT_PERCENT, ATTENDANCE_THRESHOLD } from "../discounts.js";
 import { courseStatusText, COURSE_CONFIRM_DAYS_BEFORE } from "../courseStatus.js";
@@ -93,6 +105,7 @@ export function renderAdmin(container) {
         <nav class="flex flex-wrap gap-2 sticky top-0 bg-amber-50/95 backdrop-blur py-2 z-10 -mx-1 px-1 rounded-lg">
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="event-form-section">新增活動</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="event-manage-section">活動管理</button>
+          <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="tags-section">活動標籤管理</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="payments-section">待確認繳費</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="cancellations-section">取消申請</button>
           <button type="button" class="admin-nav-link text-xs border rounded-full px-3 py-1 bg-white hover:bg-amber-100 transition" data-target="users-section">會員總覽</button>
@@ -143,15 +156,8 @@ export function renderAdmin(container) {
             </p>
             <div>
               <label class="text-sm text-gray-600 block mb-1">活動標籤（可複選）</label>
-              <div id="ev-tags" class="flex flex-wrap gap-3 text-sm">
-                ${EVENT_TAGS.map(
-                  (t) => `
-                  <label class="inline-flex items-center gap-1 border rounded-full px-3 py-1 cursor-pointer">
-                    <input type="checkbox" value="${t.id}" class="ev-tag-checkbox" />
-                    ${t.icon} ${t.label}
-                  </label>`
-                ).join("")}
-              </div>
+              <div id="ev-tags" class="flex flex-wrap gap-3 text-sm"></div>
+              <p class="text-xs text-gray-500 mt-1">要新增或修改標籤，請到下方「活動標籤管理」。</p>
             </div>
             <div>
               <label class="text-sm text-gray-600 block mb-1">報名前需要回答的問題（選填）</label>
@@ -188,6 +194,35 @@ export function renderAdmin(container) {
         <section id="event-manage-section">
           <h2 class="text-lg font-bold text-gray-800 mb-3">活動管理</h2>
           <div id="event-manage-list" class="space-y-3"></div>
+        </section>
+
+        <section id="tags-section">
+          <h2 class="text-lg font-bold text-gray-800 mb-3">活動標籤管理</h2>
+          <p id="tag-error" class="hidden text-sm text-red-600 mb-3"></p>
+          <div id="tag-list" class="card rounded-xl p-4 space-y-2 mb-4"></div>
+          <form id="tag-form" class="card rounded-xl p-5 space-y-3">
+            <h3 id="tag-form-title" class="font-bold text-gray-800">新增標籤</h3>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">標籤名稱</label>
+              <input id="tag-label" type="text" required maxlength="12" placeholder="例如：樹木溝通" class="w-full border rounded-lg p-2" />
+            </div>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">圖示（點選一個，或直接在框裡輸入任何 emoji）</label>
+              <input id="tag-icon" type="text" required maxlength="8" class="w-20 border rounded-lg p-2 text-center text-xl mb-2" />
+              <div id="tag-icon-grid" class="flex flex-wrap gap-1"></div>
+            </div>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">顏色</label>
+              <div id="tag-color-grid" class="flex flex-wrap gap-2"></div>
+            </div>
+            <div>
+              <span class="text-sm text-gray-600 mr-2">預覽：</span><span id="tag-preview"></span>
+            </div>
+            <div class="flex gap-3 items-center">
+              <button type="submit" id="tag-submit" class="btn-primary text-sm">新增標籤</button>
+              <button type="button" id="tag-cancel" class="hidden text-sm text-gray-500 underline">取消編輯</button>
+            </div>
+          </form>
         </section>
 
         <section id="payments-section">
@@ -391,15 +426,36 @@ export function renderAdmin(container) {
     registrationQuestion: container.querySelector("#ev-registration-question"),
   };
 
-  const tagCheckboxes = Array.from(container.querySelectorAll(".ev-tag-checkbox"));
+  const evTagsEl = container.querySelector("#ev-tags");
 
+  function tagCheckboxes() {
+    return Array.from(evTagsEl.querySelectorAll(".ev-tag-checkbox"));
+  }
   function getCheckedTags() {
-    return tagCheckboxes.filter((cb) => cb.checked).map((cb) => cb.value);
+    return tagCheckboxes()
+      .filter((cb) => cb.checked)
+      .map((cb) => cb.value);
   }
   function setCheckedTags(tagIds = []) {
-    tagCheckboxes.forEach((cb) => {
+    tagCheckboxes().forEach((cb) => {
       cb.checked = tagIds.includes(cb.value);
     });
+  }
+
+  // 標籤清單可能在同一個畫面裡被新增/修改，重畫勾選框時要保留目前勾選的狀態，
+  // 不然主辦方正在編輯的活動會突然被清空標籤。
+  function renderEventTagCheckboxes() {
+    const checked = getCheckedTags();
+    evTagsEl.innerHTML = getTags()
+      .map(
+        (t) => `
+        <label class="inline-flex items-center gap-1 border rounded-full px-3 py-1 cursor-pointer">
+          <input type="checkbox" value="${t.id}" class="ev-tag-checkbox" />
+          ${t.icon || ""} ${t.label}
+        </label>`
+      )
+      .join("");
+    setCheckedTags(checked);
   }
 
   let editingEventId = null;
@@ -1101,6 +1157,169 @@ export function renderAdmin(container) {
     }
   });
 
+  const tagListEl = container.querySelector("#tag-list");
+  const tagErrorEl = container.querySelector("#tag-error");
+  const tagForm = container.querySelector("#tag-form");
+  const tagFormTitle = container.querySelector("#tag-form-title");
+  const tagLabelInput = container.querySelector("#tag-label");
+  const tagIconInput = container.querySelector("#tag-icon");
+  const tagIconGrid = container.querySelector("#tag-icon-grid");
+  const tagColorGrid = container.querySelector("#tag-color-grid");
+  const tagPreview = container.querySelector("#tag-preview");
+  const tagSubmitBtn = container.querySelector("#tag-submit");
+  const tagCancelBtn = container.querySelector("#tag-cancel");
+
+  let editingTagId = null;
+  let selectedTagColor = TAG_COLORS[0];
+
+  tagIconGrid.innerHTML = TAG_ICON_CHOICES.map(
+    (icon) =>
+      `<button type="button" class="tag-icon-choice w-9 h-9 text-xl rounded-lg border bg-white hover:bg-amber-100" data-icon="${icon}">${icon}</button>`
+  ).join("");
+  tagColorGrid.innerHTML = TAG_COLORS.map(
+    (c) => `<button type="button" class="tag-color-choice badge badge-tag-${c} ring-gray-600 ring-offset-1" data-color="${c}">標籤</button>`
+  ).join("");
+
+  function updateTagPreview() {
+    tagPreview.innerHTML = tagBadgeHtml({
+      label: tagLabelInput.value.trim() || "標籤名稱",
+      icon: tagIconInput.value.trim(),
+      color: selectedTagColor,
+    });
+    tagColorGrid.querySelectorAll(".tag-color-choice").forEach((b) => {
+      b.classList.toggle("ring-2", b.dataset.color === selectedTagColor);
+    });
+  }
+
+  tagIconGrid.querySelectorAll(".tag-icon-choice").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      tagIconInput.value = btn.dataset.icon;
+      updateTagPreview();
+    });
+  });
+  tagColorGrid.querySelectorAll(".tag-color-choice").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      selectedTagColor = btn.dataset.color;
+      updateTagPreview();
+    });
+  });
+  tagLabelInput.addEventListener("input", updateTagPreview);
+  tagIconInput.addEventListener("input", updateTagPreview);
+
+  function resetTagForm() {
+    editingTagId = null;
+    tagForm.reset();
+    tagIconInput.value = TAG_ICON_CHOICES[0];
+    selectedTagColor = TAG_COLORS[0];
+    tagFormTitle.textContent = "新增標籤";
+    tagSubmitBtn.textContent = "新增標籤";
+    tagCancelBtn.classList.add("hidden");
+    updateTagPreview();
+  }
+
+  function startTagEdit(tag) {
+    editingTagId = tag.id;
+    tagLabelInput.value = tag.label;
+    tagIconInput.value = tag.icon || "";
+    selectedTagColor = tag.color || "gray";
+    tagFormTitle.textContent = `編輯標籤：${tag.label}`;
+    tagSubmitBtn.textContent = "儲存變更";
+    tagCancelBtn.classList.remove("hidden");
+    updateTagPreview();
+    tagForm.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  tagCancelBtn.addEventListener("click", resetTagForm);
+
+  // 標籤一改，活動表單的勾選框、活動管理列表上的標籤色塊都要跟著更新。
+  async function refreshTags() {
+    await loadTags();
+    renderTagList();
+    renderEventTagCheckboxes();
+    renderEventList();
+  }
+
+  function renderTagList() {
+    tagListEl.innerHTML = "";
+    getTags().forEach((tag) => {
+      const row = document.createElement("div");
+      row.className = "flex items-center justify-between gap-3";
+
+      const badge = document.createElement("span");
+      badge.innerHTML = tagBadgeHtml(tag);
+
+      const btns = document.createElement("div");
+      btns.className = "flex gap-3 shrink-0 items-center";
+
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "text-sm text-emerald-700 underline";
+      editBtn.textContent = "編輯";
+      editBtn.addEventListener("click", () => startTagEdit(tag));
+      btns.appendChild(editBtn);
+
+      if (tag.id === LABOR_EXCHANGE_TAG_ID) {
+        const note = document.createElement("span");
+        note.className = "text-xs text-gray-400";
+        note.textContent = "換工點數使用中，不能刪除";
+        btns.appendChild(note);
+      } else {
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "text-sm text-red-600 underline";
+        delBtn.textContent = "刪除";
+        delBtn.addEventListener("click", async () => {
+          if (!confirm(`確定要刪除「${tag.label}」嗎？已經用了這個標籤的活動會直接不再顯示它。`)) return;
+          try {
+            await deleteTag(tag.id);
+            if (editingTagId === tag.id) resetTagForm();
+            await refreshTags();
+          } catch (err) {
+            alert("刪除標籤失敗：" + err.message);
+          }
+        });
+        btns.appendChild(delBtn);
+      }
+
+      row.append(badge, btns);
+      tagListEl.appendChild(row);
+    });
+  }
+
+  tagForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = {
+      label: tagLabelInput.value.trim(),
+      icon: tagIconInput.value.trim(),
+      color: selectedTagColor,
+    };
+    if (!data.label || !data.icon) {
+      alert("請填寫標籤名稱並選一個圖示");
+      return;
+    }
+    if (getTags().some((t) => t.label === data.label && t.id !== editingTagId)) {
+      alert("已經有同名的標籤了");
+      return;
+    }
+
+    tagSubmitBtn.disabled = true;
+    try {
+      if (editingTagId) {
+        await updateTag(editingTagId, data);
+      } else {
+        await createTag(data);
+      }
+      resetTagForm();
+      await refreshTags();
+    } catch (err) {
+      alert("儲存標籤失敗：" + err.message);
+    } finally {
+      tagSubmitBtn.disabled = false;
+    }
+  });
+
+  resetTagForm();
+
   const unsubscribe = onAuthStateChanged(auth, async (user) => {
     if (!user) {
       adminGate.textContent = "請先登入。";
@@ -1119,7 +1338,14 @@ export function renderAdmin(container) {
 
     adminGate.classList.add("hidden");
     adminSection.classList.remove("hidden");
-    renderEventList();
+    try {
+      await ensureDefaultTagsSeeded();
+      tagErrorEl.classList.add("hidden");
+    } catch (e) {
+      tagErrorEl.textContent = "無法讀寫活動標籤，請確認 Firebase 的 Firestore 規則已經更新（需要 eventTags 的規則）。";
+      tagErrorEl.classList.remove("hidden");
+    }
+    await refreshTags();
     renderPendingPayments();
     renderPendingCancellations();
     renderUsersOverview();

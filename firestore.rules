@@ -147,6 +147,12 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // 活動標籤：所有人可讀（活動列表要顯示），只有主辦方能新增/修改/刪除
+    match /eventTags/{tagId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // 活動評價：所有人可讀；本人只能新增自己的評價一次，修改/刪除交由主辦方處理
     match /reviews/{reviewId} {
       allow read: if true;

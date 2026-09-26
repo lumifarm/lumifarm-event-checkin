@@ -11,7 +11,8 @@
 - **主辦專區**：活動新增/編輯/刪除（含貼上海報圖片網址）、核對匯款、審核取消申請、會員總覽、行前通知都在這一頁。
 - **活動詳細頁**：活動列表跟我的票券的活動名稱都是連結，點進去可以看到該活動的完整說明、海報、地點、費用與名額。
 - **行前通知**：主辦方在「主辦專區」選一個活動、輸入通知內容，系統會列出目前有效報名者（不含已取消）的人數，按「產生郵件內容」會先在頁面上顯示可編輯的主旨與內文，確認沒問題後按「開啟 Gmail 並發送」會在新分頁開啟 Gmail 網頁版寫信視窗（用目前登入的 Gmail 帳號），收件人用密件副本帶入所有報名者，真正送出還是要在 Gmail 裡按一次送出。
-- **活動標籤 + 標籤篩選**：新增/編輯活動時可以複選標籤（食農教育、身心平衡、田間體驗、合作經濟、走讀導覽、換工活動），活動列表、詳細頁、主辦專區的活動管理都會用對應顏色的色塊顯示，方便一眼看出活動類型；活動列表上方也有標籤篩選按鈕（只列出目前真的有活動用到的標籤），可以只看某一類活動。
+- **活動標籤 + 標籤篩選**：新增/編輯活動時可以複選標籤，活動列表、詳細頁、主辦專區的活動管理都會用對應顏色的色塊顯示，方便一眼看出活動類型；活動列表上方也有標籤篩選按鈕（只列出目前真的有活動用到的標籤），可以只看某一類活動。
+- **自訂活動標籤**：標籤存在 Firestore 的 `eventTags`，主辦專區的「活動標籤管理」可以自己新增、改名、換圖示（從內建圖示挑選，或直接輸入任何 emoji）和顏色、刪除。原本的 6 個標籤會在主辦方第一次開主辦專區時自動寫進去，沿用原本的 id，舊活動上的標籤不受影響。「換工活動」可以改名/換圖示，但不能刪除，因為換工點數與出席折扣券的計算都認它的 id（`labor-exchange`）。刪掉的標籤在舊活動上會直接不顯示。
 - **評價與出席率**：活動報到後即可填寫星級評價與文字回饋；個人中心會顯示總報名次數、實際出席次數、取消次數與出席率。
 - **新手教學**：第一次造訪網站會彈出引導視窗，帶去「新手教學」頁面說明整個使用流程（含如何取消、如何看活動詳情）。
 - **依身分顯示導覽列**：「報到管理」「主辦專區」只有登入的主辦方帳號看得到，一般會員或未登入的訪客不會看到這兩個連結（實際權限仍然由 Firestore 規則把關，這裡只是避免介面雜訊）。
@@ -47,7 +48,7 @@ js/checkin.js             報到掃描驗證與更新邏輯
 js/payment.js             匯款資訊、繳費通知、主辦方確認收款
 js/reviews.js             送出活動評價
 js/notices.js             行前通知的郵件內容組裝（Gmail 網頁版寫信連結）
-js/tags.js                活動標籤分類清單（顏色、圖示）
+js/tags.js                活動標籤：從 Firestore 讀取/快取、新增/編輯/刪除、預設標籤、圖示與顏色選項
 js/profile.js             投保個資（真實姓名/身分證字號/出生年月日）的讀取、驗證、更新
 js/workPoints.js          換工點數的讀取、發放/扣點、歷史紀錄
 js/discounts.js           出席折扣券的門檻計算、核發、讀取
@@ -67,6 +68,7 @@ firestore.rules           Firestore 安全性規則
 | `events/{eventId}` | title, description, date (Timestamp), location, price (number), maxCap (number, 可省略表示不限), minCap（number，可省略，最低開課人數）, currentCount (number), posterUrl (string, 可省略), tags (string[], 值對應 `js/tags.js` 的 `EVENT_TAGS` id), registrationQuestion（string，可省略，報名前要回答的問題，沒填就不會跳出問答視窗） |
 | `tickets/{ticketId}` | ticketId, userId, eventId, paymentStatus ("unpaid"/"pending"/"paid"), paymentNote, paymentSubmittedAt, isCheckedIn (bool), checkedInAt, isCancelled (bool), cancelledAt, refundPercent, cancelRequestStatus ("pending"/"approved"/null), cancelRequestedAt, cancelRefundPercent, securityCode, createdAt, workPointsAwarded（bool，可省略，這張票券是否已經因為某場換工活動被一鍵發放過點數，避免重複發放）, discountApplied（bool，可省略，這張票券報名當下是否套用了出席折扣券）, couponId（string，可省略，套用的那張折扣券 id）, registrationAnswer（string，可省略，報名當下對 registrationQuestion 的回覆） |
 | `reviews/{reviewId}` | userId, eventId, rating (1-5), comment, createdAt |
+| `eventTags/{tagId}` | label（標籤名稱）, icon（emoji）, color（`js/tags.js` 的 `TAG_COLORS` 之一，對應 `css/style.css` 的 `.badge-tag-*`）, order（排序用數字）。所有人可讀，只有主辦方能寫。 |
 | `workPointTransactions/{txId}` | userId, points（number，正數＝發放、負數＝兌換扣點）, reason（string，說明文字）, eventId（可省略）, createdAt, createdBy（登記的主辦方 uid） |
 | `discountCoupons/{couponId}` | userId, discountPercent（number，目前固定 5，代表 95 折）, status ("unused"/"used"), createdAt, createdBy（核發的主辦方 uid）, usedAt（可省略）, usedTicketId（可省略，用在哪張票券上） |
 | `admins/{uid}` | 只要文件存在即代表該使用者是主辦方（可放任意欄位，例如 `{ addedAt: ... }`） |

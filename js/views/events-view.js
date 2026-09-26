@@ -2,7 +2,7 @@ import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { listEvents, registerForEvent, getMyTicketForEvent, ProfileIncompleteError } from "../events.js";
 import { paymentStatusLabel } from "../tickets.js";
-import { renderTagBadgesHtml, EVENT_TAGS } from "../tags.js";
+import { renderTagBadgesHtml, getTags, loadTags } from "../tags.js";
 import { getMyProfile, isProfileComplete } from "../profile.js";
 import { getMyCoupons } from "../discounts.js";
 import { notifyAdmin } from "../notify.js";
@@ -215,7 +215,7 @@ export function renderEvents(container) {
   function renderTagFilter(events) {
     // 只列出目前活動實際有用到的標籤，避免出現一按下去永遠是空清單的篩選項目。
     const usedTagIds = new Set(events.flatMap((ev) => ev.tags || []));
-    const usableTags = EVENT_TAGS.filter((t) => usedTagIds.has(t.id));
+    const usableTags = getTags().filter((t) => usedTagIds.has(t.id));
 
     if (usableTags.length === 0) {
       tagFilterEl.innerHTML = "";
@@ -295,7 +295,7 @@ export function renderEvents(container) {
     pastListEl.innerHTML = "";
     pastHeadingEl.classList.add("hidden");
 
-    const events = await listEvents();
+    const [events] = await Promise.all([listEvents(), loadTags()]);
     const user = auth.currentUser;
 
     const myTickets = {};
