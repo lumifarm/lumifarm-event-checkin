@@ -40,7 +40,8 @@ export async function renderEventDetail(container) {
       ${posterHtml}
       <h1 class="text-2xl font-bold text-gray-800 mb-2">${ev.title || ""}</h1>
       ${ev.tags && ev.tags.length > 0 ? `<div class="flex flex-wrap gap-1 mb-2">${renderTagBadgesHtml(ev.tags)}</div>` : ""}
-      <p class="text-sm text-gray-500 mb-4">${formatDate(ev.date)} · ${ev.location || ""}</p>
+      <p class="text-sm text-gray-500 ${ev.instructor ? "mb-1" : "mb-4"}">${formatDate(ev.date)} · ${ev.location || ""}</p>
+      ${ev.instructor ? `<p class="text-sm text-gray-700 mb-4">👤 講師：${ev.instructor}</p>` : ""}
       ${workFormHtml ? `<div class="mb-4">${workFormHtml}</div>` : ""}
       ${courseStatusHtml(ev) ? `<div class="mb-4">${courseStatusHtml(ev)}</div>` : ""}
       <div class="card rounded-xl p-5 space-y-3">

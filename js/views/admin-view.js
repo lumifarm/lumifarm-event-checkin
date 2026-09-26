@@ -131,6 +131,15 @@ export function renderAdmin(container) {
               <label class="text-sm text-gray-600 block mb-1">地點</label>
               <input id="ev-location" type="text" class="w-full border rounded-lg p-2" />
             </div>
+            <div>
+              <label class="text-sm text-gray-600 block mb-1">講師資訊（選填）</label>
+              <input
+                id="ev-instructor"
+                type="text"
+                placeholder="例如：光農合作社群創辦人 林奕衡"
+                class="w-full border rounded-lg p-2"
+              />
+            </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="text-sm text-gray-600 block mb-1">日期時間</label>
@@ -418,6 +427,7 @@ export function renderAdmin(container) {
     title: container.querySelector("#ev-title"),
     description: container.querySelector("#ev-description"),
     location: container.querySelector("#ev-location"),
+    instructor: container.querySelector("#ev-instructor"),
     date: container.querySelector("#ev-date"),
     price: container.querySelector("#ev-price"),
     maxCap: container.querySelector("#ev-maxcap"),
@@ -488,6 +498,7 @@ export function renderAdmin(container) {
     fields.title.value = ev.title || "";
     fields.description.value = ev.description || "";
     fields.location.value = ev.location || "";
+    fields.instructor.value = ev.instructor || "";
     const d = ev.date?.toDate ? ev.date.toDate() : ev.date ? new Date(ev.date) : new Date();
     fields.date.value = toDatetimeLocalValue(d);
     fields.price.value = ev.price || 0;
@@ -511,6 +522,7 @@ export function renderAdmin(container) {
       title: fields.title.value.trim(),
       description: fields.description.value.trim(),
       location: fields.location.value.trim(),
+      instructor: fields.instructor.value.trim() || null,
       date: fields.date.value ? new Date(fields.date.value) : null,
       price: Number(fields.price.value) || 0,
       maxCap: fields.maxCap.value.trim() === "" ? null : Number(fields.maxCap.value),
@@ -562,7 +574,9 @@ export function renderAdmin(container) {
     title.textContent = ev.title || "";
     const detail = document.createElement("p");
     detail.className = "text-sm text-gray-500";
-    detail.textContent = `${formatDate(ev.date)} · ${ev.location || ""} · 名額 ${ev.currentCount || 0}/${ev.maxCap || "不限"}`;
+    detail.textContent = `${formatDate(ev.date)} · ${ev.location || ""} · 名額 ${ev.currentCount || 0}/${ev.maxCap || "不限"}${
+      ev.instructor ? ` · 講師：${ev.instructor}` : ""
+    }`;
     info.append(title, detail);
     const statusText = courseStatusText(ev);
     if (statusText) {

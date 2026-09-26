@@ -146,6 +146,7 @@ export function renderEvents(container) {
         </h3>
         ${ev.tags && ev.tags.length > 0 ? `<div class="flex flex-wrap gap-2">${renderTagBadgesHtml(ev.tags)}</div>` : ""}
         <p class="text-sm md:text-base text-gray-500">${formatDate(ev.date)} · ${ev.location || ""}</p>
+        ${ev.instructor ? `<p class="text-sm md:text-base text-gray-700">👤 講師：${ev.instructor}</p>` : ""}
         <p class="text-sm md:text-base text-gray-600 leading-relaxed flex-1">${ev.description || ""}</p>
         ${courseStatusHtml(ev)}
         <div class="flex items-center justify-between text-sm md:text-base text-gray-500">
