@@ -49,17 +49,18 @@ function escapeHtml(str) {
 // 寄信給會員（報名成功、確認收到匯款）。lines 是一行一行的純文字，這裡統一
 // 做 HTML escape 再用 <br> 接起來，樣板用 {{{message_html}}} 原樣輸出，
 // 會員名字、活動名稱裡就算有特殊字元也不會變成 HTML。跟 notifyAdmin 一樣
-// 失敗只記在 console，不擋住原本的操作。
+// 不會丟出錯誤、不擋住原本的操作，但會回傳 { ok, reason } 讓呼叫端（例如
+// 主辦方確認收款）可以把寄送結果顯示出來。
 export async function notifyMember({ toEmail, toName, subject, lines }) {
   if (!EMAILJS_MEMBER_TEMPLATE_ID) {
     console.warn("尚未設定寄給會員的 EmailJS 樣板，略過會員通知信");
-    return;
+    return { ok: false, reason: "尚未設定寄給會員的信件樣板" };
   }
-  if (!toEmail) return;
+  if (!toEmail) return { ok: false, reason: "這位會員沒有 Email" };
   ensureInit();
   if (!window.emailjs) {
     console.warn("EmailJS 尚未載入，略過會員通知信");
-    return;
+    return { ok: false, reason: "寄信服務（EmailJS）沒有載入，通常是瀏覽器的廣告攔截器擋住了" };
   }
   try {
     await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_MEMBER_TEMPLATE_ID, {
@@ -68,7 +69,10 @@ export async function notifyMember({ toEmail, toName, subject, lines }) {
       subject: subject || "",
       message_html: (lines || []).map(escapeHtml).join("<br>"),
     });
+    return { ok: true };
   } catch (e) {
     console.warn("會員通知信寄送失敗（不影響原本操作）：", e);
+    const detail = e?.text || e?.message || String(e);
+    return { ok: false, reason: `寄信服務回傳錯誤（${detail}），可能是廣告攔截器擋住、網路問題或 EmailJS 額度用完` };
   }
 }

@@ -77,7 +77,7 @@ export function sendRegistrationEmail({ ev, toEmail, toName, discountApplied, cr
 }
 
 // 主辦方在主辦專區按下「確認已收款」之後寄出
-export function sendPaymentConfirmedEmail({ ev, toEmail, toName, discountApplied, paymentNote }) {
+export function sendPaymentConfirmedEmail({ ev, toEmail, toName, discountApplied }) {
   const name = toName || "會員";
   return notifyMember({
     toEmail,
@@ -86,12 +86,7 @@ export function sendPaymentConfirmedEmail({ ev, toEmail, toName, discountApplied
     lines: [
       `${name} 您好：`,
       "",
-      `我們已確認收到您「${ev?.title || ""}」的報名費用，您的報名已完成。`,
-      "",
-      "【匯款資訊】",
-      `收款帳戶：${BANK_INFO.bankName}　帳號：${BANK_INFO.account}　戶名：${BANK_INFO.accountName}`,
-      `已收金額：NT$${finalPrice(ev, discountApplied)}${discountApplied ? `（已套用出席折扣券 ${100 - DISCOUNT_PERCENT} 折）` : ""}`,
-      `您回報的匯款帳號後五碼／備註：${paymentNote || "（未填寫）"}`,
+      `我們已確認收到您「${ev?.title || ""}」的報名費用 NT$${finalPrice(ev, discountApplied)}，您的報名已完成。`,
       "",
       ...eventInfoLines(ev),
       "",

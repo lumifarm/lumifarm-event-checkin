@@ -90,24 +90,34 @@ function renderPaymentRow(p, onDone) {
     btn.textContent = "處理中...";
     try {
       await confirmPayment(p.id);
-      // 寄「已確認收到匯款」給會員；不 await，寄信失敗不影響已經完成的確認
-      sendPaymentConfirmedEmail({
-        ev: p.event,
-        toEmail: p.user?.email,
-        toName: p.user?.name,
-        discountApplied: p.discountApplied,
-        paymentNote: p.paymentNote,
-      });
-      onDone();
     } catch (e) {
       alert("確認失敗：" + e.message);
       btn.disabled = false;
       btn.textContent = "確認已收款";
+      return;
     }
+    // 收款已經確認完成；接著寄「已確認收到匯款」給會員，並把寄送結果告訴主辦方
+    // （寄不出去時收款確認照樣有效，可以之後在「報名名單」重寄）
+    btn.textContent = "寄送確認信...";
+    const mail = await sendPaymentConfirmedEmail({
+      ev: p.event,
+      toEmail: p.user?.email,
+      toName: p.user?.name,
+      discountApplied: p.discountApplied,
+    });
+    alert(mailResultMessage(mail, p.user?.email, "已確認收款，"));
+    onDone();
   });
 
   row.append(info, btn);
   return row;
+}
+
+// prefix 例如「已確認收款，」，重寄時留空
+function mailResultMessage(mail, email, prefix = "") {
+  return mail.ok
+    ? `✅ ${prefix}確認信已寄到 ${email}`
+    : `${prefix ? `${prefix}但` : ""}確認信沒有寄出：${mail.reason}。\n\n可以暫時關閉廣告攔截器、重新整理頁面後，到「報名名單／強制取消」找到這位會員按「重寄確認收款信」，或自行通知 ${email || "會員"}。`;
 }
 
 export function renderAdmin(container) {
@@ -999,6 +1009,28 @@ export function renderAdmin(container) {
 
     const actions = document.createElement("div");
     actions.className = "flex flex-wrap items-center gap-2 shrink-0";
+
+    // 確認收款時如果信沒寄出去（例如被廣告攔截器擋住），可以在這裡重寄
+    if (isPaidEvent && t.paymentStatus === "paid") {
+      const resendBtn = document.createElement("button");
+      resendBtn.type = "button";
+      resendBtn.className = "text-sm text-emerald-700 underline";
+      resendBtn.textContent = "重寄確認收款信";
+      resendBtn.addEventListener("click", async () => {
+        resendBtn.disabled = true;
+        resendBtn.textContent = "寄送中...";
+        const mail = await sendPaymentConfirmedEmail({
+          ev,
+          toEmail: t.user?.email,
+          toName: t.user?.name,
+          discountApplied: t.discountApplied,
+        });
+        alert(mailResultMessage(mail, t.user?.email));
+        resendBtn.disabled = false;
+        resendBtn.textContent = "重寄確認收款信";
+      });
+      actions.appendChild(resendBtn);
+    }
 
     if (t.isCheckedIn) {
       const note = document.createElement("span");
