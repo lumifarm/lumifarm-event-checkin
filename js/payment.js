@@ -84,6 +84,24 @@ export async function listPendingPayments() {
   );
 }
 
+// 給主辦專區「會員總覽」用：每位會員「主辦方確認收到匯款」的次數。只算付費
+// 活動（免費活動報名時自動變成已繳費，不算匯款）；之後被取消的也算，因為
+// 對方確實匯過款（取消時是另外退款處理）。回傳 { userId: 次數 }。
+export async function countPaymentsByUser() {
+  const [ticketsSnap, eventsSnap] = await Promise.all([
+    getDocs(query(collection(db, "tickets"), where("paymentStatus", "==", "paid"))),
+    getDocs(collection(db, "events")),
+  ]);
+  const paidEventIds = new Set(eventsSnap.docs.filter((d) => (d.data().price || 0) > 0).map((d) => d.id));
+  const counts = {};
+  ticketsSnap.docs.forEach((d) => {
+    const t = d.data();
+    if (!paidEventIds.has(t.eventId)) return;
+    counts[t.userId] = (counts[t.userId] || 0) + 1;
+  });
+  return counts;
+}
+
 // 主辦方寄出匯款提醒信後記錄時間，報名名單上會顯示「上次提醒」
 export async function markPaymentReminderSent(ticketId) {
   await updateDoc(doc(db, "tickets", ticketId), { paymentReminderSentAt: serverTimestamp() });

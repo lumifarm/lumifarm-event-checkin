@@ -7,6 +7,7 @@ import {
   paymentDeadlineOf,
   formatDeadline,
   markPaymentReminderSent,
+  countPaymentsByUser,
 } from "../payment.js";
 import {
   listEvents,
@@ -765,6 +766,7 @@ export function renderAdmin(container) {
           renderPendingPayments();
           renderEventList();
           renderRoster();
+          renderUsersOverview();
         })
       )
     );
@@ -845,7 +847,7 @@ export function renderAdmin(container) {
     items.forEach((c) => cancellationsEl.appendChild(renderCancelRow(c, renderPendingCancellations)));
   }
 
-  function renderUserRow(u) {
+  function renderUserRow(u, paymentCount) {
     const tr = document.createElement("tr");
     tr.className = "border-t";
     const hasInsuranceInfo = Boolean(u.realName && u.nationalId && u.birthDate);
@@ -853,6 +855,7 @@ export function renderAdmin(container) {
       u.name || "",
       u.email || "",
       u.totalEvents || 0,
+      paymentCount,
       u.attendedEvents || 0,
       u.cancelled || 0,
       `${u.rate}%`,
@@ -860,7 +863,7 @@ export function renderAdmin(container) {
     ];
     cells.forEach((val, i) => {
       const td = document.createElement("td");
-      td.className = `p-3 text-sm ${i >= 2 ? "text-center" : ""} ${i === 6 && !hasInsuranceInfo ? "text-red-500" : ""}`;
+      td.className = `p-3 text-sm ${i >= 2 ? "text-center" : ""} ${i === 7 && !hasInsuranceInfo ? "text-red-500" : ""}`;
       td.textContent = val;
       tr.appendChild(td);
     });
@@ -868,7 +871,13 @@ export function renderAdmin(container) {
   }
 
   async function renderUsersOverview() {
-    const users = await listAllUsers();
+    const [users, paymentCounts] = await Promise.all([
+      listAllUsers(),
+      countPaymentsByUser().catch((e) => {
+        console.warn("計算匯款次數失敗：", e);
+        return null;
+      }),
+    ]);
     userOverviewEl.innerHTML = "";
     if (users.length === 0) {
       userOverviewEl.innerHTML = `<p class="text-gray-500 text-sm p-4">目前沒有任何會員資料</p>`;
@@ -876,20 +885,23 @@ export function renderAdmin(container) {
     }
 
     const table = document.createElement("table");
-    table.className = "w-full min-w-[600px]";
+    table.className = "w-full min-w-[680px]";
     const thead = document.createElement("thead");
     thead.innerHTML = `
       <tr class="bg-gray-50 text-left text-xs text-gray-500">
         <th class="p-3">姓名</th>
         <th class="p-3">Email</th>
         <th class="p-3 text-center">報名次數</th>
+        <th class="p-3 text-center" title="主辦方確認收到匯款的次數（不含免費活動）">匯款次數</th>
         <th class="p-3 text-center">出席次數</th>
         <th class="p-3 text-center">取消次數</th>
         <th class="p-3 text-center">出席率</th>
         <th class="p-3 text-center">投保資料</th>
       </tr>`;
     const tbody = document.createElement("tbody");
-    users.forEach((u) => tbody.appendChild(renderUserRow(u)));
+    users.forEach((u) =>
+      tbody.appendChild(renderUserRow(u, paymentCounts ? paymentCounts[u.id] || 0 : "—"))
+    );
     table.append(thead, tbody);
     userOverviewEl.appendChild(table);
   }

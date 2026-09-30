@@ -198,7 +198,7 @@ Firebase 現在新專案的 Cloud Storage 預設要升級 Blaze（付費）方�
 
 ## 主辦專區的會員總覽
 
-「主辦專區」的「會員總覽」會列出所有會員的姓名、Email、報名次數、出席次數、取消次數與出席率（`js/tickets.js` 的 `listAllUsers`），作為活動成效與會員經營的參考依據。
+「主辦專區」的「會員總覽」會列出所有會員的姓名、Email、報名次數、匯款次數（主辦方確認收到匯款的次數，只算付費活動，之後被取消的也算；`js/payment.js` 的 `countPaymentsByUser`）、出席次數、取消次數與出席率（`js/tickets.js` 的 `listAllUsers`），作為活動成效與會員經營的參考依據。
 
 ## Firebase 後台設定步驟
 
