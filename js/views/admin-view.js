@@ -1,7 +1,13 @@
 import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { isCurrentUserAdmin } from "../checkin.js";
-import { listPendingPayments, confirmPayment, paymentDeadlineOf, formatDeadline } from "../payment.js";
+import {
+  listPendingPayments,
+  confirmPayment,
+  paymentDeadlineOf,
+  formatDeadline,
+  markPaymentReminderSent,
+} from "../payment.js";
 import {
   listEvents,
   createEvent,
@@ -36,7 +42,12 @@ import {
 import { awardPoints, awardPointsToCheckedInParticipants, listPointsHistoryForUser } from "../workPoints.js";
 import { listEligibleForCoupons, issuePendingCoupons, DISCOUNT_PERCENT, ATTENDANCE_THRESHOLD } from "../discounts.js";
 import { courseStatusText, seatsText, COURSE_CONFIRM_DAYS_BEFORE } from "../courseStatus.js";
-import { sendPaymentConfirmedEmail, sendForceCancelledEmail, OVERDUE_CANCEL_REASON } from "../memberEmails.js";
+import {
+  sendPaymentConfirmedEmail,
+  sendForceCancelledEmail,
+  sendPaymentReminderEmail,
+  OVERDUE_CANCEL_REASON,
+} from "../memberEmails.js";
 
 const SUMMARY_MAX_CHARS = 200;
 const DESCRIPTION_MAX_CHARS = 500;
@@ -1012,10 +1023,51 @@ export function renderAdmin(container) {
         : `繳費期限：${formatDeadline(deadline)}`;
       info.appendChild(dl);
       if (overdue) row.classList.add("border-red-300", "bg-red-50");
+      if (t.paymentReminderSentAt) {
+        const reminded = document.createElement("p");
+        reminded.className = "text-xs text-gray-500";
+        reminded.textContent = `上次寄匯款提醒：${formatDate(t.paymentReminderSentAt)}`;
+        info.appendChild(reminded);
+      }
     }
 
     const actions = document.createElement("div");
     actions.className = "flex flex-wrap items-center gap-2 shrink-0";
+
+    // 尚未繳費（也還沒送出匯款通知）的會員，可以手動再寄一次匯款提醒
+    if (isPaidEvent && t.paymentStatus === "unpaid") {
+      const remindBtn = document.createElement("button");
+      remindBtn.type = "button";
+      remindBtn.className = "text-sm text-amber-700 underline";
+      remindBtn.textContent = "寄匯款提醒信";
+      remindBtn.addEventListener("click", async () => {
+        if (!confirm(`要寄匯款提醒信給「${t.user?.name || "這位會員"}」（${t.user?.email || ""}）嗎？`)) return;
+        remindBtn.disabled = true;
+        remindBtn.textContent = "寄送中...";
+        const mail = await sendPaymentReminderEmail({
+          ev,
+          toEmail: t.user?.email,
+          toName: t.user?.name,
+          discountApplied: t.discountApplied,
+          createdAt: t.createdAt,
+        });
+        if (mail.ok) {
+          try {
+            await markPaymentReminderSent(t.id);
+          } catch (e) {
+            console.warn("記錄提醒時間失敗：", e);
+          }
+        }
+        alert(mailResultMessage(mail, t.user?.email, "", { label: "匯款提醒信", retryHint: null }));
+        if (mail.ok) {
+          renderRoster();
+        } else {
+          remindBtn.disabled = false;
+          remindBtn.textContent = "寄匯款提醒信";
+        }
+      });
+      actions.appendChild(remindBtn);
+    }
 
     // 確認收款時如果信沒寄出去（例如被廣告攔截器擋住），可以在這裡重寄
     if (isPaidEvent && t.paymentStatus === "paid") {

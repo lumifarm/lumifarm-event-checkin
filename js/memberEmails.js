@@ -64,14 +64,52 @@ export function sendRegistrationEmail({ ev, toEmail, toName, discountApplied, cr
       "",
       ...eventInfoLines(ev),
       "",
-      "【匯款資訊】",
-      `銀行：${BANK_INFO.bankName}`,
-      `帳號：${BANK_INFO.account}`,
-      `戶名：${BANK_INFO.accountName}`,
-      `應繳金額：NT$${finalPrice(ev, discountApplied)}${discountApplied ? `（已套用出席折扣券 ${100 - DISCOUNT_PERCENT} 折）` : ""}`,
+      ...bankInfoLines(ev, discountApplied),
+      ...SIGNATURE,
+    ],
+  });
+}
+
+// 匯款資訊＋匯款後要做的事，報名成功信跟匯款提醒信共用
+function bankInfoLines(ev, discountApplied) {
+  return [
+    "【匯款資訊】",
+    `銀行：${BANK_INFO.bankName}`,
+    `帳號：${BANK_INFO.account}`,
+    `戶名：${BANK_INFO.accountName}`,
+    `應繳金額：NT$${finalPrice(ev, discountApplied)}${discountApplied ? `（已套用出席折扣券 ${100 - DISCOUNT_PERCENT} 折）` : ""}`,
+    "",
+    `匯款後請到「我的票券」按「我已完成匯款，通知確認」並填寫帳號後五碼，方便我們對帳：${TICKETS_URL}`,
+    "主辦單位確認收到款項後，會再寄一封確認信給您。",
+  ];
+}
+
+// 主辦方在「報名名單」對尚未繳費的會員手動寄出的匯款提醒。繳費期限沿用原本
+// 報名時算出來的那個，不會因為提醒而延長；已經逾期的話，改成請對方盡快匯款。
+export function sendPaymentReminderEmail({ ev, toEmail, toName, discountApplied, createdAt }) {
+  const name = toName || "會員";
+  const title = ev?.title || "";
+  const deadlineDate = paymentDeadlineOf(createdAt, ev?.date);
+  const deadline = formatDeadline(deadlineDate);
+  const overdue = Date.now() > deadlineDate.getTime();
+  return notifyMember({
+    toEmail,
+    toName,
+    subject: overdue
+      ? `【光農合作社群】匯款提醒：${title}（已超過繳費期限，請盡快完成匯款）`
+      : `【光農合作社群】匯款提醒：${title}，請於 ${deadline} 前完成匯款`,
+    lines: [
+      `${name} 您好：`,
       "",
-      `匯款後請到「我的票券」按「我已完成匯款，通知確認」並填寫帳號後五碼，方便我們對帳：${TICKETS_URL}`,
-      "主辦單位確認收到款項後，會再寄一封確認信給您。",
+      `提醒您，您報名的「${title}」目前尚未完成匯款。`,
+      overdue
+        ? `您的繳費期限（${deadline}）已經過了，名額目前仍暫時為您保留，請盡快完成匯款，否則名額可能會釋出給其他學員。`
+        : `請於 ${deadline} 前完成匯款，逾期未繳費名額將會釋出給其他學員。`,
+      "如果您已經匯款，請到「我的票券」按「我已完成匯款，通知確認」，或直接回覆這封信附上匯款帳號後五碼；如果不打算參加了，也可以在「我的票券」直接取消報名。",
+      "",
+      ...eventInfoLines(ev),
+      "",
+      ...bankInfoLines(ev, discountApplied),
       ...SIGNATURE,
     ],
   });

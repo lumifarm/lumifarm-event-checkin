@@ -84,6 +84,11 @@ export async function listPendingPayments() {
   );
 }
 
+// 主辦方寄出匯款提醒信後記錄時間，報名名單上會顯示「上次提醒」
+export async function markPaymentReminderSent(ticketId) {
+  await updateDoc(doc(db, "tickets", ticketId), { paymentReminderSentAt: serverTimestamp() });
+}
+
 // 只有主辦方（isAdmin）能把狀態改成 paid，前面 submitPaymentNotice 擋掉了本人自己改成 paid。
 // 同時把活動的「已繳費人數」paidCount +1（開課與否以這個人數判斷）；用交易
 // 確保同一張票按兩次也只會加一次。
