@@ -13,6 +13,14 @@ const EMAILJS_MEMBER_TEMPLATE_ID = "template_5gxt22g";
 
 let initialized = false;
 
+// EmailJS 用 {{變數}} 帶入時會把 / & < > " ' ` = 轉成 HTML 編碼（例如 / 變成
+// &#x2F;），信件內容是 HTML 所以顯示正常，但主旨是純文字，會直接看到那串
+// 編碼。所以要放進主旨的文字先把這些字元換成外觀一樣的全形字。
+const SUBJECT_CHAR_MAP = { "/": "／", "&": "＆", "<": "＜", ">": "＞", '"': "＂", "'": "＇", "`": "｀", "=": "＝" };
+function subjectSafe(str) {
+  return String(str ?? "").replace(/[/&<>"'`=]/g, (c) => SUBJECT_CHAR_MAP[c]);
+}
+
 function ensureInit() {
   if (initialized || !window.emailjs) return;
   window.emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
@@ -30,8 +38,8 @@ export async function notifyAdmin({ noticeType, eventTitle, memberName, memberEm
   }
   try {
     await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-      notice_type: noticeType || "",
-      event_title: eventTitle || "（未命名活動）",
+      notice_type: subjectSafe(noticeType),
+      event_title: subjectSafe(eventTitle || "（未命名活動）"),
       member_name: memberName || "",
       member_email: memberEmail || "",
       detail: detail || "",
@@ -66,7 +74,7 @@ export async function notifyMember({ toEmail, toName, subject, lines }) {
     await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_MEMBER_TEMPLATE_ID, {
       to_email: toEmail,
       to_name: toName || "",
-      subject: subject || "",
+      subject: subjectSafe(subject),
       message_html: (lines || []).map(escapeHtml).join("<br>"),
     });
     return { ok: true };
