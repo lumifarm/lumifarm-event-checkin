@@ -9,7 +9,7 @@ const EMAILJS_SERVICE_ID = "service_tyvivco";
 const EMAILJS_TEMPLATE_ID = "template_lu5fryg";
 // 寄給會員用的第二個樣板（收件人是 {{to_email}}，內容是 {{{message_html}}}）。
 // 還沒在 EmailJS 後台建立、填入 ID 之前留空字串，notifyMember 會直接略過不寄。
-const EMAILJS_MEMBER_TEMPLATE_ID = "";
+const EMAILJS_MEMBER_TEMPLATE_ID = "template_5gxt22g";
 
 let initialized = false;
 

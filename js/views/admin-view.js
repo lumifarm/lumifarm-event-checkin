@@ -96,6 +96,7 @@ function renderPaymentRow(p, onDone) {
         toEmail: p.user?.email,
         toName: p.user?.name,
         discountApplied: p.discountApplied,
+        paymentNote: p.paymentNote,
       });
       onDone();
     } catch (e) {
