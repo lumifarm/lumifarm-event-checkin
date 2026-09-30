@@ -36,7 +36,7 @@ import {
 import { awardPoints, awardPointsToCheckedInParticipants, listPointsHistoryForUser } from "../workPoints.js";
 import { listEligibleForCoupons, issuePendingCoupons, DISCOUNT_PERCENT, ATTENDANCE_THRESHOLD } from "../discounts.js";
 import { courseStatusText, seatsText, COURSE_CONFIRM_DAYS_BEFORE } from "../courseStatus.js";
-import { sendPaymentConfirmedEmail, sendForceCancelledEmail } from "../memberEmails.js";
+import { sendPaymentConfirmedEmail, sendForceCancelledEmail, OVERDUE_CANCEL_REASON } from "../memberEmails.js";
 
 const SUMMARY_MAX_CHARS = 200;
 const DESCRIPTION_MAX_CHARS = 500;
@@ -1074,11 +1074,18 @@ export function renderAdmin(container) {
     cancelBtn.addEventListener("click", async () => {
       const name = t.user?.name || "這位會員";
       const refundPercent = refundSelect ? Number(refundSelect.value) : 0;
+      // 依會員有沒有匯款給不同的說明：有匯款 → 退款；沒匯款 → 預設以
+      // 「超過繳費期限、名額釋出」通知並附重新報名連結
+      const unpaidPaidEvent = isPaidEvent && !needsRefund;
+      const mailNote = needsRefund
+        ? `這位會員已匯款，退款比例：${refundPercent}%（請記得自行匯款退還），通知信會請會員回信提供退款帳戶。`
+        : unpaidPaidEvent
+          ? "這位會員尚未匯款，通知信會說明因超過繳費期限未匯款、名額釋出，並附上重新報名連結。"
+          : "通知信會附上重新報名連結。";
       const reason = prompt(
-        `確定要取消「${name}」在「${ev.title || ""}」的報名嗎？\n` +
-          (needsRefund ? `退款比例：${refundPercent}%（請記得自行匯款退還）\n` : "") +
-          "\n系統會寄信通知會員（附上重新報名的連結）。\n可以輸入取消原因（會寫在通知信和會員的「我的票券」），不填也可以，按「取消」則不執行：",
-        ""
+        `確定要取消「${name}」在「${ev.title || ""}」的報名嗎？\n\n${mailNote}\n\n` +
+          "取消原因（會寫在通知信和會員的「我的票券」，可修改或留空），按「取消」則不執行：",
+        unpaidPaidEvent ? OVERDUE_CANCEL_REASON : ""
       );
       if (reason === null) return;
 

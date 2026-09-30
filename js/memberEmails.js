@@ -98,31 +98,59 @@ export function sendPaymentConfirmedEmail({ ev, toEmail, toName, discountApplied
   });
 }
 
-// 主辦方在「報名名單」強制取消某人的報名後寄出：告知取消原因、退款安排，
-// 並附上活動頁連結，想參加的話可以重新報名（重新報名會重新計算繳費期限）。
+// 主辦方在「報名名單」強制取消某人的報名後寄出，內容依會員有沒有匯款分三種：
+// - 已匯款（已繳費，或已送出匯款通知待確認）：說明取消原因與退款安排，不附重新報名連結
+// - 付費活動但還沒匯款：說明是超過繳費期限未匯款、名額釋出，附上重新報名連結
+// - 免費活動：說明取消原因，附上重新報名連結
+export const OVERDUE_CANCEL_REASON = "超過繳費期限未完成匯款，名額釋出";
+
 export function sendForceCancelledEmail({ ev, eventId, toEmail, toName, reason, refundPercent, wasPaid, discountApplied }) {
   const name = toName || "會員";
-  const refundAmount = Math.round((finalPrice(ev, discountApplied) * (refundPercent || 0)) / 100);
-  const refundLines = wasPaid
-    ? refundPercent > 0
-      ? [`我們會退還您 ${refundPercent}% 的報名費用（NT$${refundAmount}），請直接回覆這封信，提供您的退款帳戶（銀行代碼、帳號、戶名），我們收到後會盡快匯款。`]
-      : ["依本次取消的情況，報名費用不予退還，如有疑問請直接回覆這封信與我們聯繫。"]
-    : [];
+  const title = ev?.title || "";
+  const isFree = !ev?.price || ev.price <= 0;
+  const reregisterLines = [
+    "",
+    isFree
+      ? "如果您仍想參加，歡迎到活動頁面重新報名（名額有限，額滿為止）："
+      : `如果您仍想參加，歡迎到活動頁面重新報名，重新報名後請於 ${PAYMENT_DEADLINE_DAYS} 天內完成匯款（名額有限，以完成繳費的順序為準）：`,
+    `${EVENT_URL}${eventId}`,
+  ];
+
+  let bodyLines;
+  if (wasPaid) {
+    const refundAmount = Math.round((finalPrice(ev, discountApplied) * (refundPercent || 0)) / 100);
+    bodyLines = [
+      `您報名的「${title}」已由主辦單位取消。`,
+      ...(reason ? [`取消原因：${reason}`] : []),
+      "",
+      refundPercent > 0
+        ? `我們會退還您 ${refundPercent}% 的報名費用（NT$${refundAmount}），請直接回覆這封信，提供您的退款帳戶（銀行代碼、帳號、戶名），我們收到後會盡快匯款。`
+        : "依本次取消的情況，報名費用不予退還，如有疑問請直接回覆這封信與我們聯繫。",
+    ];
+  } else if (!isFree) {
+    // 主辦方如果改寫了原因（不是預設的逾期說明），另外附上當作備註
+    const extra = reason && reason !== OVERDUE_CANCEL_REASON ? [`主辦單位備註：${reason}`] : [];
+    bodyLines = [
+      `由於您報名「${title}」後，超過繳費期限仍未完成匯款，為了讓其他想參加的學員有機會報名，我們已將您的名額釋出，這次報名已取消。`,
+      ...extra,
+      "",
+      "您尚未匯款，因此不需要辦理退款。如果您其實已經匯款了，請直接回覆這封信並附上匯款帳號後五碼，我們會盡快為您確認。",
+      ...reregisterLines,
+    ];
+  } else {
+    bodyLines = [`您報名的「${title}」已由主辦單位取消。`, ...(reason ? [`取消原因：${reason}`] : []), ...reregisterLines];
+  }
+
   return notifyMember({
     toEmail,
     toName,
-    subject: `【光農合作社群】您的報名已取消：${ev?.title || ""}`,
+    subject: `【光農合作社群】您的報名已取消：${title}`,
     lines: [
       `${name} 您好：`,
       "",
-      `您報名的「${ev?.title || ""}」已由主辦單位取消。`,
-      ...(reason ? [`取消原因：${reason}`] : []),
-      ...(refundLines.length ? ["", ...refundLines] : []),
+      ...bodyLines,
       "",
       ...eventInfoLines(ev),
-      "",
-      "如果您仍想參加，歡迎到活動頁面重新報名（名額有限，以完成報名與繳費的順序為準）：",
-      `${EVENT_URL}${eventId}`,
       "",
       "造成不便敬請見諒，有任何問題都可以直接回覆這封信。",
       ...SIGNATURE,
