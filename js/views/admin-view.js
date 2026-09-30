@@ -1,7 +1,7 @@
 import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { isCurrentUserAdmin } from "../checkin.js";
-import { listPendingPayments, confirmPayment } from "../payment.js";
+import { listPendingPayments, confirmPayment, paymentDeadlineOf, formatDeadline } from "../payment.js";
 import {
   listEvents,
   createEvent,
@@ -16,6 +16,7 @@ import {
   rejectCancellation,
   listActiveTicketsForEvent,
   adminForceCancelTicket,
+  syncEventCounts,
 } from "../events.js";
 import { listAllUsers } from "../tickets.js";
 import { buildPreEventNotice, buildGmailComposeLink } from "../notices.js";
@@ -34,7 +35,8 @@ import {
 } from "../tags.js";
 import { awardPoints, awardPointsToCheckedInParticipants, listPointsHistoryForUser } from "../workPoints.js";
 import { listEligibleForCoupons, issuePendingCoupons, DISCOUNT_PERCENT, ATTENDANCE_THRESHOLD } from "../discounts.js";
-import { courseStatusText, COURSE_CONFIRM_DAYS_BEFORE } from "../courseStatus.js";
+import { courseStatusText, seatsText, COURSE_CONFIRM_DAYS_BEFORE } from "../courseStatus.js";
+import { sendPaymentConfirmedEmail } from "../memberEmails.js";
 
 const SUMMARY_MAX_CHARS = 200;
 const DESCRIPTION_MAX_CHARS = 500;
@@ -88,6 +90,13 @@ function renderPaymentRow(p, onDone) {
     btn.textContent = "處理中...";
     try {
       await confirmPayment(p.id);
+      // 寄「已確認收到匯款」給會員；不 await，寄信失敗不影響已經完成的確認
+      sendPaymentConfirmedEmail({
+        ev: p.event,
+        toEmail: p.user?.email,
+        toName: p.user?.name,
+        discountApplied: p.discountApplied,
+      });
       onDone();
     } catch (e) {
       alert("確認失敗：" + e.message);
@@ -639,7 +648,7 @@ export function renderAdmin(container) {
     title.textContent = ev.title || "";
     const detail = document.createElement("p");
     detail.className = "text-sm text-gray-500";
-    detail.textContent = `${formatDate(ev.date)} · ${ev.location || ""} · 名額 ${ev.currentCount || 0}/${ev.maxCap || "不限"}${
+    detail.textContent = `${formatDate(ev.date)} · ${ev.location || ""} · ${seatsText(ev)}${
       ev.instructor ? ` · 講師：${ev.instructor}` : ""
     }`;
     info.append(title, detail);
@@ -720,7 +729,16 @@ export function renderAdmin(container) {
       pendingEl.appendChild(empty);
       return;
     }
-    items.forEach((p) => pendingEl.appendChild(renderPaymentRow(p, renderPendingPayments)));
+    // 確認收款後已繳費人數會變，活動管理列表跟報名名單也一起重新整理
+    items.forEach((p) =>
+      pendingEl.appendChild(
+        renderPaymentRow(p, () => {
+          renderPendingPayments();
+          renderEventList();
+          renderRoster();
+        })
+      )
+    );
   }
 
   function renderCancelRow(c, onDone) {
@@ -965,6 +983,19 @@ export function renderAdmin(container) {
     status.textContent = parts.join("　");
     info.append(who, email, status);
 
+    // 付費活動報名後三天內沒繳費（也沒送出匯款通知）的標出來，讓主辦方決定要不要強制取消釋出名額
+    if (isPaidEvent && t.paymentStatus === "unpaid") {
+      const deadline = paymentDeadlineOf(t.createdAt, ev.date);
+      const overdue = Date.now() > deadline.getTime();
+      const dl = document.createElement("p");
+      dl.className = overdue ? "text-sm font-bold text-red-600" : "text-sm text-amber-700";
+      dl.textContent = overdue
+        ? `⚠️ 已超過繳費期限（${formatDeadline(deadline)}）仍未繳費，可以考慮強制取消釋出名額`
+        : `繳費期限：${formatDeadline(deadline)}`;
+      info.appendChild(dl);
+      if (overdue) row.classList.add("border-red-300", "bg-red-50");
+    }
+
     const actions = document.createElement("div");
     actions.className = "flex flex-wrap items-center gap-2 shrink-0";
 
@@ -1038,7 +1069,14 @@ export function renderAdmin(container) {
     rosterSummaryEl.textContent = "載入中...";
     try {
       const tickets = await listActiveTicketsForEvent(ev.id);
-      rosterSummaryEl.textContent = `目前有效報名：${tickets.length} 人${ev.maxCap ? `／名額 ${ev.maxCap}` : ""}`;
+      const paid = tickets.filter((t) => t.paymentStatus === "paid").length;
+      const overdue = tickets.filter(
+        (t) => Number(ev.price) > 0 && t.paymentStatus === "unpaid" && Date.now() > paymentDeadlineOf(t.createdAt, ev.date).getTime()
+      ).length;
+      rosterSummaryEl.textContent =
+        `目前有效報名：${tickets.length} 人${ev.maxCap ? `／名額 ${ev.maxCap}` : ""}` +
+        (Number(ev.price) > 0 ? `　已完成繳費：${paid} 人` : "") +
+        (overdue ? `　逾期未繳費：${overdue} 人` : "");
       if (tickets.length === 0) {
         const empty = document.createElement("p");
         empty.className = "text-gray-500 text-sm";
@@ -1557,6 +1595,12 @@ export function renderAdmin(container) {
     } catch (e) {
       tagErrorEl.textContent = "無法讀寫活動標籤，請確認 Firebase 的 Firestore 規則已經更新（需要 eventTags 的規則）。";
       tagErrorEl.classList.remove("hidden");
+    }
+    // 依票券重新校正每個活動的報名人數／已繳費人數（舊活動第一次會補上 paidCount）
+    try {
+      await syncEventCounts();
+    } catch (e) {
+      console.warn("校正活動人數失敗：", e);
     }
     await refreshTags();
     renderPendingPayments();

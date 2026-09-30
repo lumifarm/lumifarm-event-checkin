@@ -7,6 +7,9 @@
 const EMAILJS_PUBLIC_KEY = "BcWO0rGunj8MWbrKk";
 const EMAILJS_SERVICE_ID = "service_tyvivco";
 const EMAILJS_TEMPLATE_ID = "template_lu5fryg";
+// 寄給會員用的第二個樣板（收件人是 {{to_email}}，內容是 {{{message_html}}}）。
+// 還沒在 EmailJS 後台建立、填入 ID 之前留空字串，notifyMember 會直接略過不寄。
+const EMAILJS_MEMBER_TEMPLATE_ID = "";
 
 let initialized = false;
 
@@ -36,5 +39,36 @@ export async function notifyAdmin({ noticeType, eventTitle, memberName, memberEm
     });
   } catch (e) {
     console.warn("主辦方通知寄送失敗（不影響原本操作）：", e);
+  }
+}
+
+function escapeHtml(str) {
+  return String(str ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+// 寄信給會員（報名成功、確認收到匯款）。lines 是一行一行的純文字，這裡統一
+// 做 HTML escape 再用 <br> 接起來，樣板用 {{{message_html}}} 原樣輸出，
+// 會員名字、活動名稱裡就算有特殊字元也不會變成 HTML。跟 notifyAdmin 一樣
+// 失敗只記在 console，不擋住原本的操作。
+export async function notifyMember({ toEmail, toName, subject, lines }) {
+  if (!EMAILJS_MEMBER_TEMPLATE_ID) {
+    console.warn("尚未設定寄給會員的 EmailJS 樣板，略過會員通知信");
+    return;
+  }
+  if (!toEmail) return;
+  ensureInit();
+  if (!window.emailjs) {
+    console.warn("EmailJS 尚未載入，略過會員通知信");
+    return;
+  }
+  try {
+    await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_MEMBER_TEMPLATE_ID, {
+      to_email: toEmail,
+      to_name: toName || "",
+      subject: subject || "",
+      message_html: (lines || []).map(escapeHtml).join("<br>"),
+    });
+  } catch (e) {
+    console.warn("會員通知信寄送失敗（不影響原本操作）：", e);
   }
 }

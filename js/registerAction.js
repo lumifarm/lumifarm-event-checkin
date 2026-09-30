@@ -2,6 +2,8 @@ import { registerForEvent, ProfileIncompleteError } from "./events.js";
 import { paymentStatusLabel } from "./tickets.js";
 import { notifyAdmin } from "./notify.js";
 import { getCourseStatus } from "./courseStatus.js";
+import { sendRegistrationEmail } from "./memberEmails.js";
+import { paymentDeadlineOf, formatDeadline } from "./payment.js";
 
 // 活動列表卡片跟活動詳情頁共用的「報名區塊」：依登入狀態、報名/繳費狀態、
 // 活動是否結束、是否不開課、是否額滿，顯示對應的按鈕或狀態，兩個地方邏輯一致。
@@ -100,12 +102,20 @@ export function wireRegisterButtons(root, { findEvent, user }) {
       // 其他錯誤照樣往外拋，兩邊各自的 catch 會顯示「報名失敗：...」。
       async function submitRegistration(answer) {
         try {
-          await registerForEvent(eventId, answer);
-          alert("報名成功！接下來請完成繳費。");
+          const { discountApplied } = await registerForEvent(eventId, answer);
+          const isFree = !ev.price || ev.price <= 0;
+          // 寄確認信給會員（報名時用的 Google 帳號信箱）；不 await，寄信失敗
+          // 或被瀏覽器擋掉都不影響已經成功的報名。
+          sendRegistrationEmail({ ev, toEmail: user?.email, toName: user?.displayName, discountApplied });
+          alert(
+            isFree
+              ? "報名成功！確認信會寄到你的 Google 信箱。"
+              : `報名成功！已為你保留名額，請於 ${formatDeadline(paymentDeadlineOf(null, ev.date))} 前（三天內）完成匯款，逾期名額會釋出。\n\n匯款資訊在「我的票券」，也會寄一封確認信到你的 Google 信箱。`
+          );
           // 免費活動報名當下就直接算已繳費，這裡才需要通知主辦方；付費活動
           // 要等會員實際送出繳費通知才算「已繳費」，通知會在那個時候發，
           // 不然一報名就寄信，主辦方還沒真的收到錢就會被通知洗版。
-          if (!ev.price || ev.price <= 0) {
+          if (isFree) {
             notifyAdmin({
               noticeType: "新報名（免費活動，已自動完成繳費）",
               eventTitle: ev.title,

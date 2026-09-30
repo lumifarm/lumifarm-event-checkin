@@ -3,7 +3,7 @@ import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/f
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { currentQuery } from "../router.js";
 import { renderTagBadgesHtml, loadTags } from "../tags.js";
-import { courseStatusHtml } from "../courseStatus.js";
+import { courseStatusHtml, seatsText } from "../courseStatus.js";
 import { getMyTicketForEvent } from "../events.js";
 import { registerActionHtml, wireRegisterButtons } from "../registerAction.js";
 
@@ -69,7 +69,7 @@ export async function renderEventDetail(container) {
         ${!summaryHtml && !contentHtml ? `<p class="text-gray-500">（尚無活動說明）</p>` : ""}
         <div class="flex items-center justify-between text-gray-500 border-t pt-3">
           <span>費用：${ev.price ? `NT$${ev.price}` : "免費"}</span>
-          <span>名額：${ev.currentCount || 0}/${ev.maxCap || "不限"}${ev.minCap ? `（最低 ${ev.minCap} 人開課）` : ""}</span>
+          <span>${seatsText(ev)}${ev.minCap ? `（最低 ${ev.minCap} 人開課）` : ""}</span>
         </div>
         <div id="event-detail-register" class="border-t pt-4"></div>
       </div>

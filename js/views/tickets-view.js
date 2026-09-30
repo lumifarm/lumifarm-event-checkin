@@ -1,8 +1,8 @@
 import { auth } from "../firebase-config.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { getMyTickets, renderTicketQRCode, getMyStats, paymentStatusLabel } from "../tickets.js";
-import { BANK_INFO, submitPaymentNotice } from "../payment.js";
-import { requestCancellation, calcRefundPercent } from "../events.js";
+import { BANK_INFO, submitPaymentNotice, paymentDeadlineOf, formatDeadline } from "../payment.js";
+import { requestCancellation, calcRefundPercent, canCancelDirectly, cancelRegistrationDirectly } from "../events.js";
 import { getMyPointsBalance, getMyPointsHistory } from "../workPoints.js";
 import { getMyCoupons, DISCOUNT_PERCENT } from "../discounts.js";
 import { notifyAdmin } from "../notify.js";
@@ -45,6 +45,7 @@ function paymentSectionHtml(t) {
             : ""
         }
         <p class="mt-1">應繳金額：NT$${finalPriceOf(t)}</p>
+        ${paymentDeadlineHtml(t)}
         <input
           type="text"
           id="note-${t.id}"
@@ -60,6 +61,14 @@ function paymentSectionHtml(t) {
     return `<p class="text-sm text-gray-500 mt-2">已收到你的匯款通知，主辦方核對後會將狀態改為已繳費。</p>`;
   }
   return "";
+}
+
+function paymentDeadlineHtml(t) {
+  const deadline = paymentDeadlineOf(t.createdAt, t.event?.date);
+  const overdue = Date.now() > deadline.getTime();
+  return overdue
+    ? `<p class="mt-1 font-bold text-red-600">⚠️ 已超過繳費期限（${formatDeadline(deadline)}），名額可能會被釋出，請盡快完成匯款或與主辦單位聯繫。</p>`
+    : `<p class="mt-1 font-bold text-amber-700">請於 ${formatDeadline(deadline)} 前完成匯款（報名後三天內），逾期名額會釋出。</p>`;
 }
 
 const CANCELLATION_POLICY_LINES = [
@@ -178,6 +187,39 @@ export function renderTickets(container) {
     });
   }
 
+  function wireDirectCancelButtons(tickets, user) {
+    ticketList.querySelectorAll(".btn-cancel-direct").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const ticket = tickets.find((t) => t.id === btn.dataset.cancelId);
+        if (!ticket) return;
+        const isFree = !ticket.event?.price || ticket.event.price <= 0;
+        const msg = isFree
+          ? `確定要取消「${ticket.event?.title || ""}」的報名嗎？\n這是免費活動，取消後會直接釋出名額。`
+          : `確定要取消「${ticket.event?.title || ""}」的報名嗎？\n你還沒有繳費，取消後會直接釋出名額，不需要主辦方審核。\n\n如果你其實已經匯款了，請不要按這裡，改用「我已完成匯款，通知確認」。`;
+        if (!confirm(msg)) return;
+
+        btn.disabled = true;
+        btn.textContent = "取消中...";
+        try {
+          await cancelRegistrationDirectly(ticket.id);
+          notifyAdmin({
+            noticeType: isFree ? "會員已自行取消報名（免費活動）" : "會員已自行取消報名（尚未繳費）",
+            eventTitle: ticket.event?.title,
+            memberName: user.displayName,
+            memberEmail: user.email,
+            detail: "尚未收到款項，已直接取消並釋出名額，不需要處理退款。",
+          });
+          alert("已取消報名。之後如果想參加，可以再重新報名。");
+          render(user);
+        } catch (e) {
+          alert("取消失敗：" + e.message);
+          btn.disabled = false;
+          btn.textContent = "取消報名";
+        }
+      });
+    });
+  }
+
   function wireCancelButtons(tickets, user) {
     ticketList.querySelectorAll(".btn-cancel-ticket").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -220,7 +262,7 @@ export function renderTickets(container) {
         </div>
         ${t.cancelledBy === "admin" && t.cancelReason ? `<p class="text-sm text-gray-600 mt-2">取消原因：${escapeHtml(t.cancelReason)}</p>` : ""}
         ${
-          t.cancelledBy === "admin" && !t.refundPercent
+          (t.cancelledBy === "admin" || t.cancelledBy === "self") && !t.refundPercent
             ? ""
             : `<p class="text-sm text-gray-500 mt-2">退款比例：${t.refundPercent ?? 0}%</p>`
         }
@@ -237,6 +279,9 @@ export function renderTickets(container) {
       actionHtml = `<p class="text-sm text-yellow-700 mt-3">取消申請審核中，主辦方確認前活動仍照常進行，尚未退費。</p>`;
     } else if (isPast) {
       actionHtml = `<p class="text-sm text-gray-500 mt-3">活動已結束</p>`;
+    } else if (canCancelDirectly(t, t.event)) {
+      // 還沒付錢（未繳費或免費活動）可以直接取消，不用等主辦方審核
+      actionHtml = `<button data-cancel-id="${t.id}" class="btn-cancel-direct inline-block mt-3 text-sm text-red-600 underline">取消報名</button>`;
     } else {
       actionHtml = `<button data-cancel-id="${t.id}" class="btn-cancel-ticket inline-block mt-3 text-sm text-red-600 underline">申請取消報名</button>`;
     }
@@ -404,6 +449,7 @@ export function renderTickets(container) {
 
     wirePaymentButtons(activeTickets, user);
     wireCancelButtons(activeTickets, user);
+    wireDirectCancelButtons(activeTickets, user);
   }
 
   const unsubscribe = onAuthStateChanged(auth, render);

@@ -8,6 +8,8 @@ import {
   where,
   updateDoc,
   serverTimestamp,
+  runTransaction,
+  increment,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 export const BANK_INFO = {
@@ -15,6 +17,37 @@ export const BANK_INFO = {
   account: "20301800119518",
   accountName: "林奕衡",
 };
+
+// 報名後幾天內要完成匯款（算到第 N 天的 23:59）。逾期不會自動取消（沒有後端
+// 可以定時執行），主辦專區的「報名名單」會標出逾期未繳費的人，由主辦方決定
+// 要不要強制取消、釋出名額。
+export const PAYMENT_DEADLINE_DAYS = 3;
+
+function toDate(ts) {
+  if (!ts) return null;
+  return ts.toDate ? ts.toDate() : new Date(ts);
+}
+
+// 繳費期限 = 報名日 + 3 天的 23:59；如果活動比這個時間更早開始，就以活動開始
+// 時間為準。createdAt 還沒從伺服器回來（剛報名）時用現在時間計算。
+export function paymentDeadlineOf(createdAt, eventDate) {
+  const d = new Date(toDate(createdAt) || Date.now());
+  d.setDate(d.getDate() + PAYMENT_DEADLINE_DAYS);
+  d.setHours(23, 59, 0, 0);
+  const ev = toDate(eventDate);
+  return ev && ev < d ? ev : d;
+}
+
+export function formatDeadline(d) {
+  return d.toLocaleString("zh-TW", {
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
 
 // 使用者按「我已完成匯款」：只允許把狀態改成 pending（待確認），
 // 是否真的收到款項、改成 paid，交由主辦方在報到管理頁面手動確認
@@ -51,9 +84,19 @@ export async function listPendingPayments() {
   );
 }
 
-// 只有主辦方（isAdmin）能把狀態改成 paid，前面 submitPaymentNotice 擋掉了本人自己改成 paid
+// 只有主辦方（isAdmin）能把狀態改成 paid，前面 submitPaymentNotice 擋掉了本人自己改成 paid。
+// 同時把活動的「已繳費人數」paidCount +1（開課與否以這個人數判斷）；用交易
+// 確保同一張票按兩次也只會加一次。
 export async function confirmPayment(ticketId) {
-  await updateDoc(doc(db, "tickets", ticketId), {
-    paymentStatus: "paid",
+  const ticketRef = doc(db, "tickets", ticketId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ticketRef);
+    if (!snap.exists()) throw new Error("找不到這張票券");
+    const t = snap.data();
+    if (t.paymentStatus === "paid") return;
+    tx.update(ticketRef, { paymentStatus: "paid", paymentConfirmedAt: serverTimestamp() });
+    if (!t.isCancelled) {
+      tx.update(doc(db, "events", t.eventId), { paidCount: increment(1) });
+    }
   });
 }

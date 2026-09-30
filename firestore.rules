@@ -32,6 +32,14 @@ service cloud.firestore {
       return c.userId == request.auth.uid && c.status == 'unused';
     }
 
+    // 活動人數欄位（currentCount 有效報名、paidCount 已繳費）一般會員只能在
+    // 報名／取消時各 +1 或 -1，不能一次亂改成任意數字。
+    function countChangesByAtMostOne(field) {
+      let before = resource.data.get(field, 0);
+      let after = request.resource.data.get(field, 0);
+      return after == before || after == before + 1 || after == before - 1;
+    }
+
     // 主辦方名單：手動在 Firebase Console 建立文件，文件 ID = 使用者的 uid
     match /admins/{adminId} {
       allow read: if isSignedIn();
@@ -42,20 +50,27 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId);
+      // cancelledEvents：未繳費的報名本人可以直接取消，取消次數只能 +1
       allow update: if
         (isOwner(userId) &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['name', 'email', 'photoURL', 'totalEvents', 'realName', 'nationalId', 'birthDate'])) ||
+            .hasOnly(['name', 'email', 'photoURL', 'totalEvents', 'realName', 'nationalId', 'birthDate', 'cancelledEvents']) &&
+          (!('cancelledEvents' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            request.resource.data.cancelledEvents == resource.data.get('cancelledEvents', 0) + 1)) ||
         isAdmin();
     }
 
-    // 活動資訊：所有人可讀，只有主辦方可新增/刪除；報名時允許任何登入者更新名額欄位
+    // 活動資訊：所有人可讀，只有主辦方可新增/刪除；報名／取消時允許登入者
+    // 把人數欄位 +1 或 -1（paidCount 只有免費活動報名、取消時會由會員異動，
+    // 付費活動的 paidCount 由主辦方確認收款時增加）
     match /events/{eventId} {
       allow read: if true;
       allow create, delete: if isAdmin();
       allow update: if isAdmin() ||
         (isSignedIn() &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentCount']));
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentCount', 'paidCount']) &&
+          countChangesByAtMostOne('currentCount') &&
+          countChangesByAtMostOne('paidCount'));
     }
 
     // 報名票券：本人與主辦方可讀；本人建立自己的票券、只能改繳費狀態；報到狀態只能由主辦方更新
@@ -104,6 +119,20 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['cancelRequestStatus', 'cancelRequestedAt', 'cancelRefundPercent']) &&
           request.resource.data.cancelRequestStatus == 'pending') ||
+        // 本人直接取消「還沒付錢」的報名：未繳費，或免費活動（已繳費但金額為 0）。
+        // 已送出匯款通知（pending）或已繳費的付費活動不能走這條，要走上面的
+        // 申請取消 → 主辦方核准。退款比例固定 0%，因為根本沒收到錢。
+        (ticketOwnedByCaller() && resource.data.get('isCheckedIn', false) == false &&
+          resource.data.get('isCancelled', false) != true &&
+          resource.data.get('cancelRequestStatus', null) != 'pending' &&
+          (resource.data.paymentStatus == 'unpaid' ||
+            (resource.data.paymentStatus == 'paid' &&
+              get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.get('price', 0) == 0)) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['isCancelled', 'cancelledAt', 'refundPercent', 'cancelledBy']) &&
+          request.resource.data.isCancelled == true &&
+          request.resource.data.refundPercent == 0 &&
+          request.resource.data.cancelledBy == 'self') ||
         // 本人針對「先前取消過的同一張票券」重新報名：整份重置回剛報名的狀態，
         // 但活動不能被換成別的（eventId 必須不變）。跟上面的 create 規則一樣，
         // 免費活動可以直接是 paid，一樣要用 get() 查真正的活動價格做確認。
@@ -126,7 +155,9 @@ service cloud.firestore {
 
     // 出席折扣券：本人與主辦方可讀自己的那幾張；只有主辦方能發放；本人
     // 報名付費活動時可以把自己「未使用」的那張改成「已使用」（同一次
-    // 只能改這三個欄位），其餘異動只有主辦方能做。
+    // 只能改這三個欄位）；本人直接取消未繳費的報名時，可以把用在那張票券上
+    // 的券改回「未使用」（用 getAfter 確認同一批寫入裡那張票券確實被本人
+    // 取消了）。其餘異動只有主辦方能做。
     match /discountCoupons/{couponId} {
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isAdmin();
@@ -134,7 +165,14 @@ service cloud.firestore {
         (isSignedIn() && resource.data.userId == request.auth.uid &&
           resource.data.status == 'unused' &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'usedAt', 'usedTicketId']) &&
-          request.resource.data.status == 'used');
+          request.resource.data.status == 'used') ||
+        (isSignedIn() && resource.data.userId == request.auth.uid &&
+          resource.data.status == 'used' &&
+          resource.data.get('usedTicketId', null) != null &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'usedAt', 'usedTicketId']) &&
+          request.resource.data.status == 'unused' &&
+          getAfter(/databases/$(database)/documents/tickets/$(resource.data.usedTicketId)).data.userId == request.auth.uid &&
+          getAfter(/databases/$(database)/documents/tickets/$(resource.data.usedTicketId)).data.get('cancelledBy', null) == 'self');
       allow delete: if false;
     }
 

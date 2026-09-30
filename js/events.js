@@ -120,6 +120,7 @@ export async function createEvent(data) {
     tags: data.tags || [],
     registrationQuestion: data.registrationQuestion || null,
     currentCount: 0,
+    paidCount: 0,
   });
 }
 
@@ -199,6 +200,7 @@ export async function registerForEvent(eventId, registrationAnswer) {
   const unusedCoupon = couponSnap.docs.find((d) => d.data().status === "unused");
   const couponRef = unusedCoupon ? doc(db, "discountCoupons", unusedCoupon.id) : null;
 
+  let discountApplied = false;
   await runTransaction(db, async (tx) => {
     const eventSnap = await tx.get(eventRef);
     if (!eventSnap.exists()) throw new Error("活動不存在");
@@ -250,19 +252,104 @@ export async function registerForEvent(eventId, registrationAnswer) {
       registrationAnswer: registrationAnswer || null,
       createdAt: serverTimestamp(),
     });
-    tx.update(eventRef, { currentCount: increment(1) });
+    // currentCount = 目前有效報名（佔名額上限用）；paidCount = 已完成繳費
+    // （判斷是否達到最低開課人數用）。免費活動報名當下就算繳費完成。
+    tx.update(eventRef, isFree ? { currentCount: increment(1), paidCount: increment(1) } : { currentCount: increment(1) });
     tx.update(userRef, { totalEvents: increment(1) });
     if (applyDiscount) {
       tx.update(couponRef, { status: "used", usedAt: serverTimestamp(), usedTicketId: ticketRef.id });
     }
+    discountApplied = applyDiscount;
   });
 
-  return ticketRef.id;
+  return { ticketId: ticketRef.id, discountApplied };
 }
 
 function eventDateOf(eventData) {
   if (!eventData?.date) return null;
   return eventData.date.toDate ? eventData.date.toDate() : new Date(eventData.date);
+}
+
+// 取消一張票券時活動人數要扣回去：有效報名 -1，已繳費的票再把已繳費人數 -1
+function countDecrement(ticket) {
+  return ticket.paymentStatus === "paid"
+    ? { currentCount: increment(-1), paidCount: increment(-1) }
+    : { currentCount: increment(-1) };
+}
+
+// 還沒付錢的報名（未繳費，或是免費活動）本人可以直接取消，不用等主辦方審核：
+// 沒有收到錢就沒有退款要處理。已送出匯款通知（pending）或已繳費的付費活動，
+// 仍然要走 requestCancellation → 主辦方核准的流程。
+// 報名時用掉的折扣券一併還給會員（Firestore 規則允許本人在票券被自己取消時
+// 把券改回未使用）。
+export function canCancelDirectly(ticket, event) {
+  if (!ticket || ticket.isCancelled || ticket.isCheckedIn) return false;
+  if (ticket.cancelRequestStatus === "pending") return false;
+  const isFree = !event?.price || event.price <= 0;
+  return ticket.paymentStatus === "unpaid" || (isFree && ticket.paymentStatus === "paid");
+}
+
+export async function cancelRegistrationDirectly(ticketId) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("請先登入");
+
+  const ticketRef = doc(db, "tickets", ticketId);
+  const ticketSnap = await getDoc(ticketRef);
+  if (!ticketSnap.exists()) throw new Error("找不到這張票券");
+  const ticket = ticketSnap.data();
+  if (ticket.userId !== user.uid) throw new Error("無權限操作這張票券");
+
+  const eventSnap = await getDoc(doc(db, "events", ticket.eventId));
+  const event = eventSnap.exists() ? eventSnap.data() : null;
+  if (!canCancelDirectly(ticket, event)) {
+    throw new Error("這張票券已經送出匯款通知或已繳費，請改用「申請取消報名」");
+  }
+
+  const batch = writeBatch(db);
+  batch.update(ticketRef, {
+    isCancelled: true,
+    cancelledAt: serverTimestamp(),
+    refundPercent: 0,
+    cancelledBy: "self",
+  });
+  if (event) batch.update(doc(db, "events", ticket.eventId), countDecrement(ticket));
+  batch.update(doc(db, "users", user.uid), { cancelledEvents: increment(1) });
+  if (ticket.discountApplied && ticket.couponId) {
+    batch.update(doc(db, "discountCoupons", ticket.couponId), {
+      status: "unused",
+      usedAt: null,
+      usedTicketId: null,
+    });
+  }
+  await batch.commit();
+}
+
+// 主辦專區每次開啟時跑一次：依照所有票券重新計算每個活動的有效報名人數與
+// 已繳費人數，跟活動文件上記錄的不一樣就更正。paidCount 是後來才加的欄位，
+// 舊活動靠這裡補上；平常各種操作都會即時增減，這裡只是保險。
+export async function syncEventCounts() {
+  const [eventsSnap, ticketsSnap] = await Promise.all([getDocs(collection(db, "events")), getDocs(collection(db, "tickets"))]);
+  const counts = {};
+  ticketsSnap.docs.forEach((d) => {
+    const t = d.data();
+    if (t.isCancelled) return;
+    if (!counts[t.eventId]) counts[t.eventId] = { current: 0, paid: 0 };
+    const c = counts[t.eventId];
+    c.current += 1;
+    if (t.paymentStatus === "paid") c.paid += 1;
+  });
+
+  let fixed = 0;
+  await Promise.all(
+    eventsSnap.docs.map(async (d) => {
+      const ev = d.data();
+      const c = counts[d.id] || { current: 0, paid: 0 };
+      if ((ev.currentCount ?? 0) === c.current && ev.paidCount === c.paid) return;
+      await updateDoc(d.ref, { currentCount: c.current, paidCount: c.paid });
+      fixed += 1;
+    })
+  );
+  return fixed;
 }
 
 // 使用者申請取消：不會立刻取消，只是送出申請並記錄「如果現在核准，退款比例
@@ -335,7 +422,7 @@ export async function approveCancellation(ticketId) {
     refundPercent: ticket.cancelRefundPercent ?? 0,
     cancelRequestStatus: "approved",
   });
-  batch.update(doc(db, "events", ticket.eventId), { currentCount: increment(-1) });
+  batch.update(doc(db, "events", ticket.eventId), countDecrement(ticket));
   batch.update(doc(db, "users", ticket.userId), { cancelledEvents: increment(1) });
   await batch.commit();
 }
@@ -380,7 +467,7 @@ export async function adminForceCancelTicket(ticketId, { refundPercent, reason }
     // 如果會員剛好有待審核的取消申請，一併結案，避免還留在「取消申請」列表
     ...(ticket.cancelRequestStatus === "pending" ? { cancelRequestStatus: "approved" } : {}),
   });
-  batch.update(doc(db, "events", ticket.eventId), { currentCount: increment(-1) });
+  batch.update(doc(db, "events", ticket.eventId), countDecrement(ticket));
   if (ticket.discountApplied && ticket.couponId) {
     batch.update(doc(db, "discountCoupons", ticket.couponId), {
       status: "unused",

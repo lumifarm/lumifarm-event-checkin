@@ -4,7 +4,7 @@ import { listEvents, getMyTicketForEvent } from "../events.js";
 import { renderTagBadgesHtml, getTags, loadTags } from "../tags.js";
 import { getMyProfile, isProfileComplete } from "../profile.js";
 import { getMyCoupons } from "../discounts.js";
-import { courseStatusHtml } from "../courseStatus.js";
+import { courseStatusHtml, seatsText } from "../courseStatus.js";
 import { registerActionHtml, wireRegisterButtons } from "../registerAction.js";
 
 function formatDate(ts) {
@@ -81,7 +81,7 @@ export function renderEvents(container) {
         ${courseStatusHtml(ev)}
         <div class="flex items-center justify-between text-sm md:text-base text-gray-500">
           <span>費用：${ev.price ? `NT$${ev.price}` : "免費"}</span>
-          <span>名額：${ev.currentCount || 0}/${ev.maxCap || "不限"}${ev.minCap ? `（最低 ${ev.minCap} 人開課）` : ""}</span>
+          <span>${seatsText(ev)}${ev.minCap ? `（最低 ${ev.minCap} 人開課）` : ""}</span>
         </div>
         <div>${registerActionHtml(ev, ticket, user, isPast)}</div>
       </div>`;
