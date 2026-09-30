@@ -36,7 +36,7 @@ import {
 import { awardPoints, awardPointsToCheckedInParticipants, listPointsHistoryForUser } from "../workPoints.js";
 import { listEligibleForCoupons, issuePendingCoupons, DISCOUNT_PERCENT, ATTENDANCE_THRESHOLD } from "../discounts.js";
 import { courseStatusText, seatsText, COURSE_CONFIRM_DAYS_BEFORE } from "../courseStatus.js";
-import { sendPaymentConfirmedEmail } from "../memberEmails.js";
+import { sendPaymentConfirmedEmail, sendForceCancelledEmail } from "../memberEmails.js";
 
 const SUMMARY_MAX_CHARS = 200;
 const DESCRIPTION_MAX_CHARS = 500;
@@ -113,11 +113,18 @@ function renderPaymentRow(p, onDone) {
   return row;
 }
 
-// prefix 例如「已確認收款，」，重寄時留空
-function mailResultMessage(mail, email, prefix = "") {
+// prefix 例如「已確認收款，」，重寄時留空；retryHint 是寄不出去時的補救說明
+function mailResultMessage(
+  mail,
+  email,
+  prefix = "",
+  { label = "確認信", retryHint = "到「報名名單／強制取消」找到這位會員按「重寄確認收款信」" } = {}
+) {
   return mail.ok
-    ? `✅ ${prefix}確認信已寄到 ${email}`
-    : `${prefix ? `${prefix}但` : ""}確認信沒有寄出：${mail.reason}。\n\n可以暫時關閉廣告攔截器、重新整理頁面後，到「報名名單／強制取消」找到這位會員按「重寄確認收款信」，或自行通知 ${email || "會員"}。`;
+    ? `✅ ${prefix}${label}已寄到 ${email}`
+    : `${prefix ? `${prefix}但` : ""}${label}沒有寄出：${mail.reason}。\n\n${
+        retryHint ? `可以暫時關閉廣告攔截器、重新整理頁面後，${retryHint}，或` : "請"
+      }自行通知 ${email || "會員"}。`;
 }
 
 export function renderAdmin(container) {
@@ -1070,7 +1077,7 @@ export function renderAdmin(container) {
       const reason = prompt(
         `確定要取消「${name}」在「${ev.title || ""}」的報名嗎？\n` +
           (needsRefund ? `退款比例：${refundPercent}%（請記得自行匯款退還）\n` : "") +
-          "\n可以輸入取消原因（會顯示在會員的「我的票券」），不填也可以，按「取消」則不執行：",
+          "\n系統會寄信通知會員（附上重新報名的連結）。\n可以輸入取消原因（會寫在通知信和會員的「我的票券」），不填也可以，按「取消」則不執行：",
         ""
       );
       if (reason === null) return;
@@ -1079,12 +1086,30 @@ export function renderAdmin(container) {
       cancelBtn.textContent = "取消中...";
       try {
         await adminForceCancelTicket(t.id, { refundPercent, reason: reason.trim() });
-        await Promise.all([renderRoster(), renderEventList(), renderPendingCancellations()]);
       } catch (e) {
         alert("強制取消失敗：" + e.message);
         cancelBtn.disabled = false;
         cancelBtn.textContent = "強制取消";
+        return;
       }
+      cancelBtn.textContent = "寄送通知信...";
+      const mail = await sendForceCancelledEmail({
+        ev,
+        eventId: ev.id,
+        toEmail: t.user?.email,
+        toName: t.user?.name,
+        reason: reason.trim(),
+        refundPercent,
+        wasPaid: needsRefund,
+        discountApplied: t.discountApplied,
+      });
+      alert(
+        mailResultMessage(mail, t.user?.email, "已取消報名，", {
+          label: "取消通知信",
+          retryHint: null,
+        })
+      );
+      await Promise.all([renderRoster(), renderEventList(), renderPendingCancellations()]);
     });
     actions.appendChild(cancelBtn);
 

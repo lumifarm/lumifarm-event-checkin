@@ -5,6 +5,7 @@ import { DISCOUNT_PERCENT } from "./discounts.js";
 import { notifyMember } from "./notify.js";
 
 const TICKETS_URL = "https://checkin.lumifarm.org/#/tickets";
+const EVENT_URL = "https://checkin.lumifarm.org/#/event?id=";
 const SIGNATURE = ["", "光農合作社群 敬上"];
 
 function toDate(ts) {
@@ -92,6 +93,38 @@ export function sendPaymentConfirmedEmail({ ev, toEmail, toName, discountApplied
       "",
       `活動當天請打開「我的票券」出示 QR Code 報到：${TICKETS_URL}`,
       "期待與您見面！",
+      ...SIGNATURE,
+    ],
+  });
+}
+
+// 主辦方在「報名名單」強制取消某人的報名後寄出：告知取消原因、退款安排，
+// 並附上活動頁連結，想參加的話可以重新報名（重新報名會重新計算繳費期限）。
+export function sendForceCancelledEmail({ ev, eventId, toEmail, toName, reason, refundPercent, wasPaid, discountApplied }) {
+  const name = toName || "會員";
+  const refundAmount = Math.round((finalPrice(ev, discountApplied) * (refundPercent || 0)) / 100);
+  const refundLines = wasPaid
+    ? refundPercent > 0
+      ? [`我們會退還您 ${refundPercent}% 的報名費用（NT$${refundAmount}），請直接回覆這封信，提供您的退款帳戶（銀行代碼、帳號、戶名），我們收到後會盡快匯款。`]
+      : ["依本次取消的情況，報名費用不予退還，如有疑問請直接回覆這封信與我們聯繫。"]
+    : [];
+  return notifyMember({
+    toEmail,
+    toName,
+    subject: `【光農合作社群】您的報名已取消：${ev?.title || ""}`,
+    lines: [
+      `${name} 您好：`,
+      "",
+      `您報名的「${ev?.title || ""}」已由主辦單位取消。`,
+      ...(reason ? [`取消原因：${reason}`] : []),
+      ...(refundLines.length ? ["", ...refundLines] : []),
+      "",
+      ...eventInfoLines(ev),
+      "",
+      "如果您仍想參加，歡迎到活動頁面重新報名（名額有限，以完成報名與繳費的順序為準）：",
+      `${EVENT_URL}${eventId}`,
+      "",
+      "造成不便敬請見諒，有任何問題都可以直接回覆這封信。",
       ...SIGNATURE,
     ],
   });
