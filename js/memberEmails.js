@@ -3,6 +3,7 @@
 import { BANK_INFO, paymentDeadlineOf, formatDeadline, PAYMENT_DEADLINE_DAYS } from "./payment.js";
 import { DISCOUNT_PERCENT } from "./discounts.js";
 import { notifyMember } from "./notify.js";
+import { ticketAmount } from "./companions.js";
 
 const TICKETS_URL = "https://checkin.lumifarm.org/#/tickets";
 const EVENT_URL = "https://checkin.lumifarm.org/#/event?id=";
@@ -22,14 +23,19 @@ function eventInfoLines(ev) {
   ];
 }
 
-function finalPrice(ev, discountApplied) {
-  const price = ev?.price || 0;
-  return discountApplied ? Math.round(price * (1 - DISCOUNT_PERCENT / 100)) : price;
+// 應繳金額（含同行孩童，折扣券只折家長本人那一份）
+function finalPrice(ev, discountApplied, companions = []) {
+  return ticketAmount(ev?.price, { discountApplied, companions });
+}
+
+function companionLines(companions = []) {
+  if (!companions.length) return [];
+  return [`同行孩童：${companions.map((c) => c.name).join("、")}（共 ${companions.length} 位，連同您本人共 ${companions.length + 1} 人）`];
 }
 
 // 報名成功：付費活動附上匯款資訊與繳費期限；免費活動只告知報名成功。
 // createdAt 傳 null 代表「剛剛報名」，繳費期限用現在時間算。
-export function sendRegistrationEmail({ ev, toEmail, toName, discountApplied, createdAt = null }) {
+export function sendRegistrationEmail({ ev, toEmail, toName, discountApplied, companions = [], createdAt = null }) {
   const isFree = !ev?.price || ev.price <= 0;
   const name = toName || "會員";
 
@@ -42,6 +48,7 @@ export function sendRegistrationEmail({ ev, toEmail, toName, discountApplied, cr
         `${name} 您好：`,
         "",
         `感謝您報名「${ev?.title || ""}」，這是免費活動，已為您完成報名，不需要繳費。`,
+        ...companionLines(companions),
         "",
         ...eventInfoLines(ev),
         "",
@@ -60,24 +67,27 @@ export function sendRegistrationEmail({ ev, toEmail, toName, discountApplied, cr
       `${name} 您好：`,
       "",
       `感謝您報名「${ev?.title || ""}」，已為您保留名額。`,
+      ...companionLines(companions),
       `請於 ${deadline} 前（報名後 ${PAYMENT_DEADLINE_DAYS} 天內）完成匯款，逾期未繳費名額將會釋出給其他學員。`,
       "",
       ...eventInfoLines(ev),
       "",
-      ...bankInfoLines(ev, discountApplied),
+      ...bankInfoLines(ev, discountApplied, companions),
       ...SIGNATURE,
     ],
   });
 }
 
 // 匯款資訊＋匯款後要做的事，報名成功信跟匯款提醒信共用
-function bankInfoLines(ev, discountApplied) {
+function bankInfoLines(ev, discountApplied, companions = []) {
   return [
     "【匯款資訊】",
     `銀行：${BANK_INFO.bankName}`,
     `帳號：${BANK_INFO.account}`,
     `戶名：${BANK_INFO.accountName}`,
-    `應繳金額：NT$${finalPrice(ev, discountApplied)}${discountApplied ? `（已套用出席折扣券 ${100 - DISCOUNT_PERCENT} 折）` : ""}`,
+    `應繳金額：NT$${finalPrice(ev, discountApplied, companions)}${
+      companions.length ? `（含同行孩童 ${companions.length} 位，孩童費用與成人相同）` : ""
+    }${discountApplied ? `（您本人已套用出席折扣券 ${100 - DISCOUNT_PERCENT} 折）` : ""}`,
     "",
     `匯款後請到「我的票券」按「我已完成匯款，通知確認」並填寫帳號後五碼，方便我們對帳：${TICKETS_URL}`,
     "主辦單位確認收到款項後，會再寄一封確認信給您。",
@@ -86,7 +96,7 @@ function bankInfoLines(ev, discountApplied) {
 
 // 主辦方在「報名名單」對尚未繳費的會員手動寄出的匯款提醒。繳費期限沿用原本
 // 報名時算出來的那個，不會因為提醒而延長；已經逾期的話，改成請對方盡快匯款。
-export function sendPaymentReminderEmail({ ev, toEmail, toName, discountApplied, createdAt }) {
+export function sendPaymentReminderEmail({ ev, toEmail, toName, discountApplied, companions = [], createdAt }) {
   const name = toName || "會員";
   const title = ev?.title || "";
   const deadlineDate = paymentDeadlineOf(createdAt, ev?.date);
@@ -109,14 +119,14 @@ export function sendPaymentReminderEmail({ ev, toEmail, toName, discountApplied,
       "",
       ...eventInfoLines(ev),
       "",
-      ...bankInfoLines(ev, discountApplied),
+      ...bankInfoLines(ev, discountApplied, companions),
       ...SIGNATURE,
     ],
   });
 }
 
 // 主辦方在主辦專區按下「確認已收款」之後寄出
-export function sendPaymentConfirmedEmail({ ev, toEmail, toName, discountApplied }) {
+export function sendPaymentConfirmedEmail({ ev, toEmail, toName, discountApplied, companions = [] }) {
   const name = toName || "會員";
   return notifyMember({
     toEmail,
@@ -125,7 +135,8 @@ export function sendPaymentConfirmedEmail({ ev, toEmail, toName, discountApplied
     lines: [
       `${name} 您好：`,
       "",
-      `我們已確認收到您「${ev?.title || ""}」的報名費用 NT$${finalPrice(ev, discountApplied)}，您的報名已完成。`,
+      `我們已確認收到您「${ev?.title || ""}」的報名費用 NT$${finalPrice(ev, discountApplied, companions)}，您的報名已完成。`,
+      ...companionLines(companions),
       "",
       ...eventInfoLines(ev),
       "",
@@ -142,7 +153,17 @@ export function sendPaymentConfirmedEmail({ ev, toEmail, toName, discountApplied
 // - 免費活動：說明取消原因，附上重新報名連結
 export const OVERDUE_CANCEL_REASON = "超過繳費期限未完成匯款，名額釋出";
 
-export function sendForceCancelledEmail({ ev, eventId, toEmail, toName, reason, refundPercent, wasPaid, discountApplied }) {
+export function sendForceCancelledEmail({
+  ev,
+  eventId,
+  toEmail,
+  toName,
+  reason,
+  refundPercent,
+  wasPaid,
+  discountApplied,
+  companions = [],
+}) {
   const name = toName || "會員";
   const title = ev?.title || "";
   const isFree = !ev?.price || ev.price <= 0;
@@ -156,7 +177,7 @@ export function sendForceCancelledEmail({ ev, eventId, toEmail, toName, reason, 
 
   let bodyLines;
   if (wasPaid) {
-    const refundAmount = Math.round((finalPrice(ev, discountApplied) * (refundPercent || 0)) / 100);
+    const refundAmount = Math.round((finalPrice(ev, discountApplied, companions) * (refundPercent || 0)) / 100);
     bodyLines = [
       `您報名的「${title}」已由主辦單位取消。`,
       ...(reason ? [`取消原因：${reason}`] : []),

@@ -16,6 +16,7 @@ import {
   increment,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { getCourseStatus } from "./courseStatus.js";
+import { companionsOf, seatsOf, MAX_COMPANIONS, validateCompanion, normalizeCompanion } from "./companions.js";
 
 // 取消政策的退款比例：活動開始前 >=7 天全額（會另外扣轉帳手續費）、
 // 3~6 天內 50%、少於 3 天不退款。天數用「事件日期 - 現在」計算。
@@ -57,19 +58,31 @@ export async function listActiveParticipantsForInsurance(eventId) {
   const snap = await getDocs(q);
   const tickets = snap.docs.map((d) => d.data()).filter((t) => !t.isCancelled);
 
-  return Promise.all(
+  // 同行孩童接在家長後面，備註寫是誰的孩子、Email 留家長的方便聯絡
+  const groups = await Promise.all(
     tickets.map(async (t) => {
       const userSnap = await getDoc(doc(db, "users", t.userId));
       const u = userSnap.exists() ? userSnap.data() : null;
-      return {
+      const parent = {
         name: u?.name || "",
         email: u?.email || "",
         realName: u?.realName || "",
         nationalId: u?.nationalId || "",
         birthDate: u?.birthDate || "",
+        note: "",
       };
+      const kids = companionsOf(t).map((c) => ({
+        name: c.name,
+        email: parent.email,
+        realName: c.name,
+        nationalId: c.nationalId || "",
+        birthDate: c.birthDate || "",
+        note: `${parent.realName || parent.name} 的同行孩童`,
+      }));
+      return [parent, ...kids];
     })
   );
+  return groups.flat();
 }
 
 // 給主辦專區「報名問題回覆」用：某活動目前還算數的報名者（排除已取消）
@@ -183,9 +196,12 @@ function randomSecurityCode() {
 
 // 報名活動：交易內先檢查是否已報名過、再檢查名額，最後同時建立票券、
 // 活動人數 +1、個人總報名次數 +1，全部在同一個 transaction 內完成
-export async function registerForEvent(eventId, registrationAnswer) {
+export async function registerForEvent(eventId, registrationAnswer, companions = []) {
   const user = auth.currentUser;
   if (!user) throw new Error("請先登入");
+  const kids = (companions || []).map(normalizeCompanion);
+  if (kids.length > MAX_COMPANIONS) throw new Error(`同行孩童最多 ${MAX_COMPANIONS} 位`);
+  const seats = 1 + kids.length;
 
   const eventRef = doc(db, "events", eventId);
   const ticketRef = doc(db, "tickets", ticketDocId(eventId, user.uid));
@@ -220,6 +236,16 @@ export async function registerForEvent(eventId, registrationAnswer) {
     if (event.maxCap && currentCount >= event.maxCap) {
       throw new Error("活動名額已滿");
     }
+    if (event.maxCap && currentCount + seats > event.maxCap) {
+      throw new Error(`名額不足：目前只剩 ${event.maxCap - currentCount} 個名額（含同行孩童共需要 ${seats} 個）`);
+    }
+    for (const c of kids) {
+      const err = validateCompanion(c, event.date);
+      if (err) throw new Error(err);
+      if (c.nationalId && c.nationalId === userSnap.data()?.nationalId) {
+        throw new Error("孩童的身分證字號跟你本人的一樣，請確認");
+      }
+    }
     if (getCourseStatus(event)?.state === "cancelled") {
       throw new Error("這場活動未達最低開課人數，已確定不開課");
     }
@@ -250,11 +276,13 @@ export async function registerForEvent(eventId, registrationAnswer) {
       discountApplied: applyDiscount,
       couponId: applyDiscount ? couponRef.id : null,
       registrationAnswer: registrationAnswer || null,
+      companions: kids,
       createdAt: serverTimestamp(),
     });
     // currentCount = 目前有效報名（佔名額上限用）；paidCount = 已完成繳費
     // （判斷是否達到最低開課人數用）。免費活動報名當下就算繳費完成。
-    tx.update(eventRef, isFree ? { currentCount: increment(1), paidCount: increment(1) } : { currentCount: increment(1) });
+    // 同行孩童也各佔一個名額
+    tx.update(eventRef, isFree ? { currentCount: increment(seats), paidCount: increment(seats) } : { currentCount: increment(seats) });
     tx.update(userRef, { totalEvents: increment(1) });
     if (applyDiscount) {
       tx.update(couponRef, { status: "used", usedAt: serverTimestamp(), usedTicketId: ticketRef.id });
@@ -270,11 +298,12 @@ function eventDateOf(eventData) {
   return eventData.date.toDate ? eventData.date.toDate() : new Date(eventData.date);
 }
 
-// 取消一張票券時活動人數要扣回去：有效報名 -1，已繳費的票再把已繳費人數 -1
+// 取消一張票券時活動人數要扣回去（含同行孩童）：有效報名扣掉，已繳費的票再把已繳費人數扣掉
 function countDecrement(ticket) {
+  const n = seatsOf(ticket);
   return ticket.paymentStatus === "paid"
-    ? { currentCount: increment(-1), paidCount: increment(-1) }
-    : { currentCount: increment(-1) };
+    ? { currentCount: increment(-n), paidCount: increment(-n) }
+    : { currentCount: increment(-n) };
 }
 
 // 還沒付錢的報名（未繳費，或是免費活動）本人可以直接取消，不用等主辦方審核：
@@ -335,8 +364,8 @@ export async function syncEventCounts() {
     if (t.isCancelled) return;
     if (!counts[t.eventId]) counts[t.eventId] = { current: 0, paid: 0 };
     const c = counts[t.eventId];
-    c.current += 1;
-    if (t.paymentStatus === "paid") c.paid += 1;
+    c.current += seatsOf(t);
+    if (t.paymentStatus === "paid") c.paid += seatsOf(t);
   });
 
   let fixed = 0;
@@ -441,6 +470,31 @@ export async function listActiveTicketsForEvent(eventId) {
       return { ...t, user: userSnap.exists() ? userSnap.data() : null };
     })
   );
+}
+
+// 主辦方在「報名名單」補登／修改某張票券的同行孩童（例如會員報名時沒填、
+// 事後才說要帶孩子）。人數差多少就增減多少；票券已繳費的話已繳費人數也
+// 一起調整（請主辦方先確認對方已支付孩童的費用）。
+export async function adminSetCompanions(ticketId, companions) {
+  const kids = companions.map(normalizeCompanion);
+  if (kids.length > MAX_COMPANIONS) throw new Error(`同行孩童最多 ${MAX_COMPANIONS} 位`);
+  const ticketRef = doc(db, "tickets", ticketId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ticketRef);
+    if (!snap.exists()) throw new Error("找不到這張票券");
+    const t = snap.data();
+    if (t.isCancelled) throw new Error("這張票券已經取消了");
+    const diff = kids.length - companionsOf(t).length;
+    tx.update(ticketRef, { companions: kids });
+    if (diff !== 0) {
+      tx.update(
+        doc(db, "events", t.eventId),
+        t.paymentStatus === "paid"
+          ? { currentCount: increment(diff), paidCount: increment(diff) }
+          : { currentCount: increment(diff) }
+      );
+    }
+  });
 }
 
 // 主辦方強制取消某人的報名：跟核准取消一樣釋出名額，但

@@ -24,6 +24,7 @@ import {
   listActiveTicketsForEvent,
   adminForceCancelTicket,
   syncEventCounts,
+  adminSetCompanions,
 } from "../events.js";
 import { listAllUsers } from "../tickets.js";
 import { buildPreEventNotice, buildGmailComposeLink } from "../notices.js";
@@ -49,6 +50,8 @@ import {
   sendPaymentReminderEmail,
   OVERDUE_CANCEL_REASON,
 } from "../memberEmails.js";
+import { companionsOf, seatsOf, ticketAmount, MAX_COMPANIONS } from "../companions.js";
+import { showCompanionsModal } from "../companionForm.js";
 
 const SUMMARY_MAX_CHARS = 200;
 const DESCRIPTION_MAX_CHARS = 500;
@@ -83,10 +86,12 @@ function renderPaymentRow(p, onDone) {
   const detail = document.createElement("p");
   detail.className = "text-sm text-gray-500";
   const price = p.event?.price || 0;
-  const finalPrice = p.discountApplied ? Math.round(price * (1 - DISCOUNT_PERCENT / 100)) : price;
-  detail.textContent = p.discountApplied
-    ? `金額：NT$${finalPrice}（已套用出席折扣券，原價 NT$${price}）`
-    : `金額：NT$${finalPrice}`;
+  const finalPrice = ticketAmount(price, p);
+  const kids = companionsOf(p).length;
+  detail.textContent =
+    `金額：NT$${finalPrice}` +
+    (kids ? `（含同行孩童 ${kids} 位）` : "") +
+    (p.discountApplied ? `（本人已套用出席折扣券，原價 NT$${price}）` : "");
 
   const note = document.createElement("p");
   note.className = "text-sm font-bold text-emerald-700";
@@ -116,6 +121,7 @@ function renderPaymentRow(p, onDone) {
       toEmail: p.user?.email,
       toName: p.user?.name,
       discountApplied: p.discountApplied,
+      companions: companionsOf(p),
     });
     alert(mailResultMessage(mail, p.user?.email, "已確認收款，"));
     onDone();
@@ -1024,6 +1030,23 @@ export function renderAdmin(container) {
     status.textContent = parts.join("　");
     info.append(who, email, status);
 
+    const kids = companionsOf(t);
+    if (kids.length) {
+      const kidLine = document.createElement("p");
+      kidLine.className = "text-sm text-gray-700";
+      const missing = kids.filter((c) => !c.nationalId || !c.birthDate).length;
+      kidLine.textContent =
+        `👧 同行孩童 ${kids.length} 位：${kids.map((c) => c.name).join("、")}` +
+        (missing ? `（${missing} 位保險資料尚未填齊）` : "");
+      info.appendChild(kidLine);
+    }
+    if (isPaidEvent) {
+      const amount = document.createElement("p");
+      amount.className = "text-xs text-gray-500";
+      amount.textContent = `應繳金額：NT$${ticketAmount(ev.price, t)}${t.paymentNote ? `　後五碼／備註：${t.paymentNote}` : ""}`;
+      info.appendChild(amount);
+    }
+
     // 付費活動報名後三天內沒繳費（也沒送出匯款通知）的標出來，讓主辦方決定要不要強制取消釋出名額
     if (isPaidEvent && t.paymentStatus === "unpaid") {
       const deadline = paymentDeadlineOf(t.createdAt, ev.date);
@@ -1046,6 +1069,72 @@ export function renderAdmin(container) {
     const actions = document.createElement("div");
     actions.className = "flex flex-wrap items-center gap-2 shrink-0";
 
+    // 會員已經匯款但沒有在系統回報（或已回報待確認），主辦方可以在這裡直接確認收款
+    if (isPaidEvent && (t.paymentStatus === "unpaid" || t.paymentStatus === "pending")) {
+      const payBtn = document.createElement("button");
+      payBtn.type = "button";
+      payBtn.className = "btn-primary text-sm";
+      payBtn.textContent = "直接確認已收款";
+      payBtn.addEventListener("click", async () => {
+        const name = t.user?.name || "這位會員";
+        const note = prompt(
+          `確定已經收到「${name}」的匯款 NT$${ticketAmount(ev.price, t)}${kids.length ? `（含同行孩童 ${kids.length} 位）` : ""}嗎？\n\n` +
+            "確認後會改成「已繳費」、算進開課人數，並寄確認收款信給會員。\n" +
+            "可以順便記下匯款帳號後五碼或備註（選填），按「取消」則不執行：",
+          t.paymentNote || ""
+        );
+        if (note === null) return;
+        payBtn.disabled = true;
+        payBtn.textContent = "處理中...";
+        try {
+          await confirmPayment(t.id, { note: note.trim() });
+        } catch (e) {
+          alert("確認失敗：" + e.message);
+          payBtn.disabled = false;
+          payBtn.textContent = "直接確認已收款";
+          return;
+        }
+        payBtn.textContent = "寄送確認信...";
+        const mail = await sendPaymentConfirmedEmail({
+          ev,
+          toEmail: t.user?.email,
+          toName: t.user?.name,
+          discountApplied: t.discountApplied,
+          companions: kids,
+        });
+        alert(mailResultMessage(mail, t.user?.email, "已確認收款，"));
+        await Promise.all([renderRoster(), renderEventList(), renderPendingPayments(), renderUsersOverview()]);
+      });
+      actions.appendChild(payBtn);
+    }
+
+    // 補登／修改同行孩童（例如會員報名時沒填、事後才說要帶孩子）
+    if (!t.isCheckedIn) {
+      const kidBtn = document.createElement("button");
+      kidBtn.type = "button";
+      kidBtn.className = "text-sm text-emerald-700 underline";
+      kidBtn.textContent = kids.length ? "修改同行孩童" : "新增同行孩童";
+      kidBtn.addEventListener("click", () => {
+        showCompanionsModal({
+          title: `${t.user?.name || "會員"} 的同行孩童`,
+          note:
+            `每位孩童佔一個名額、算進開課人數${isPaidEvent ? `，費用與成人相同（NT$${ev.price}／人）` : ""}，最多 ${MAX_COMPANIONS} 位。\n` +
+            "姓名必填；身分證字號、出生年月日可以之後再補（投保名單會標示「尚未填寫」）。\n" +
+            (isPaidEvent && t.paymentStatus === "paid"
+              ? "⚠️ 這張票已經是「已繳費」，新增的孩童會直接算進已繳費人數，請先確認對方已支付孩童的費用。"
+              : ""),
+          initial: kids,
+          max: MAX_COMPANIONS,
+          eventDate: ev.date,
+          onSave: async (list) => {
+            await adminSetCompanions(t.id, list);
+            await Promise.all([renderRoster(), renderEventList()]);
+          },
+        });
+      });
+      actions.appendChild(kidBtn);
+    }
+
     // 尚未繳費（也還沒送出匯款通知）的會員，可以手動再寄一次匯款提醒
     if (isPaidEvent && t.paymentStatus === "unpaid") {
       const remindBtn = document.createElement("button");
@@ -1061,6 +1150,7 @@ export function renderAdmin(container) {
           toEmail: t.user?.email,
           toName: t.user?.name,
           discountApplied: t.discountApplied,
+          companions: kids,
           createdAt: t.createdAt,
         });
         if (mail.ok) {
@@ -1095,6 +1185,7 @@ export function renderAdmin(container) {
           toEmail: t.user?.email,
           toName: t.user?.name,
           discountApplied: t.discountApplied,
+          companions: kids,
         });
         alert(mailResultMessage(mail, t.user?.email));
         resendBtn.disabled = false;
@@ -1173,6 +1264,7 @@ export function renderAdmin(container) {
         refundPercent,
         wasPaid: needsRefund,
         discountApplied: t.discountApplied,
+        companions: kids,
       });
       alert(
         mailResultMessage(mail, t.user?.email, "已取消報名，", {
@@ -1198,12 +1290,15 @@ export function renderAdmin(container) {
     rosterSummaryEl.textContent = "載入中...";
     try {
       const tickets = await listActiveTicketsForEvent(ev.id);
-      const paid = tickets.filter((t) => t.paymentStatus === "paid").length;
+      // 人數都含同行孩童
+      const people = tickets.reduce((n, t) => n + seatsOf(t), 0);
+      const kidsTotal = people - tickets.length;
+      const paid = tickets.filter((t) => t.paymentStatus === "paid").reduce((n, t) => n + seatsOf(t), 0);
       const overdue = tickets.filter(
         (t) => Number(ev.price) > 0 && t.paymentStatus === "unpaid" && Date.now() > paymentDeadlineOf(t.createdAt, ev.date).getTime()
       ).length;
       rosterSummaryEl.textContent =
-        `目前有效報名：${tickets.length} 人${ev.maxCap ? `／名額 ${ev.maxCap}` : ""}` +
+        `目前有效報名：${people} 人${kidsTotal ? `（含同行孩童 ${kidsTotal} 位）` : ""}${ev.maxCap ? `／名額 ${ev.maxCap}` : ""}` +
         (Number(ev.price) > 0 ? `　已完成繳費：${paid} 人` : "") +
         (overdue ? `　逾期未繳費：${overdue} 人` : "");
       if (tickets.length === 0) {
@@ -1259,13 +1354,14 @@ export function renderAdmin(container) {
       }
 
       const missing = rows.filter((r) => !r.realName || !r.nationalId || !r.birthDate);
-      const header = "姓名,身分證字號,出生年月日,Email";
+      const header = "姓名,身分證字號,出生年月日,Email,備註";
       const lines = rows.map((r) =>
         [
           r.realName || "（尚未填寫）",
           r.nationalId || "（尚未填寫）",
           r.birthDate || "（尚未填寫）",
           r.email || "",
+          r.note || "",
         ].join(",")
       );
       insuranceOutput.value = [header, ...lines].join("\n");

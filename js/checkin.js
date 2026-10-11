@@ -65,5 +65,7 @@ export async function processScannedTicket(decodedText) {
   });
   await batch.commit();
 
-  return { userName, eventId: ticket.eventId };
+  // 同行孩童跟家長用同一張票報到，回傳名字讓報到畫面顯示這張票一共幾個人
+  const companions = Array.isArray(ticket.companions) ? ticket.companions.map((c) => c.name) : [];
+  return { userName, eventId: ticket.eventId, companions };
 }

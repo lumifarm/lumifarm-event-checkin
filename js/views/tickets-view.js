@@ -7,6 +7,7 @@ import { getMyPointsBalance, getMyPointsHistory } from "../workPoints.js";
 import { getMyCoupons, DISCOUNT_PERCENT } from "../discounts.js";
 import { notifyAdmin } from "../notify.js";
 import { courseStatusHtml } from "../courseStatus.js";
+import { companionsOf, ticketAmount } from "../companions.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -28,9 +29,16 @@ function eventDateOf(t) {
 // 那個結果重算金額給使用者看，折扣百分比不會另外存在票券裡（目前全站
 // 只有一種折扣），跟 discounts.js 的常數保持同一份。
 function finalPriceOf(t) {
-  const price = t.event?.price || 0;
-  if (!t.discountApplied) return price;
-  return Math.round(price * (1 - DISCOUNT_PERCENT / 100));
+  return ticketAmount(t.event?.price, t);
+}
+
+// 票券上列出同行孩童（姓名是會員自己輸入的，要 escape）
+function companionsHtml(t) {
+  const kids = companionsOf(t);
+  if (kids.length === 0) return "";
+  return `<p class="text-sm text-gray-700 mt-2">👧 同行孩童 ${kids.length} 位：${escapeHtml(
+    kids.map((c) => c.name).join("、")
+  )}<span class="text-xs text-gray-500">（報到時跟你用同一張票券；如需修改孩童資料請聯絡主辦單位）</span></p>`;
 }
 
 function paymentSectionHtml(t) {
@@ -44,7 +52,9 @@ function paymentSectionHtml(t) {
             ? `<p class="mt-1 text-lime-700">已套用出席折扣券（${100 - DISCOUNT_PERCENT}折）</p>`
             : ""
         }
-        <p class="mt-1">應繳金額：NT$${finalPriceOf(t)}</p>
+        <p class="mt-1">應繳金額：NT$${finalPriceOf(t)}${
+          companionsOf(t).length ? `（含同行孩童 ${companionsOf(t).length} 位）` : ""
+        }</p>
         ${paymentDeadlineHtml(t)}
         <input
           type="text"
@@ -310,6 +320,7 @@ export function renderTickets(container) {
             ${cancelPending ? `<span class="badge badge-yellow">取消審核中</span>` : ""}
           </div>
           ${!isPast && courseStatusHtml(t.event) ? `<div class="mt-2">${courseStatusHtml(t.event)}</div>` : ""}
+          ${companionsHtml(t)}
           ${workFormHtml}
           ${
             t.registrationAnswer

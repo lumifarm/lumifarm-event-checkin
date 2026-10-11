@@ -33,11 +33,15 @@ service cloud.firestore {
     }
 
     // 活動人數欄位（currentCount 有效報名、paidCount 已繳費）一般會員只能在
-    // 報名／取消時各 +1 或 -1，不能一次亂改成任意數字。
-    function countChangesByAtMostOne(field) {
+    // 報名／取消時增減，一次最多 4（本人 + 最多 3 位同行孩童），不能亂改成任意數字。
+    function countChangesBySmallStep(field) {
       let before = resource.data.get(field, 0);
       let after = request.resource.data.get(field, 0);
-      return after == before || after == before + 1 || after == before - 1;
+      return after - before <= 4 && before - after <= 4;
+    }
+    // 同行孩童（15 歲以下由家長代為報名）最多 3 位
+    function companionsWithinLimit() {
+      return request.resource.data.get('companions', []).size() <= 3;
     }
 
     // 主辦方名單：手動在 Firebase Console 建立文件，文件 ID = 使用者的 uid
@@ -61,7 +65,7 @@ service cloud.firestore {
     }
 
     // 活動資訊：所有人可讀，只有主辦方可新增/刪除；報名／取消時允許登入者
-    // 把人數欄位 +1 或 -1（paidCount 只有免費活動報名、取消時會由會員異動，
+    // 增減人數欄位（含同行孩童，一次最多 4；paidCount 只有免費活動報名、取消時會由會員異動，
     // 付費活動的 paidCount 由主辦方確認收款時增加）
     match /events/{eventId} {
       allow read: if true;
@@ -69,8 +73,8 @@ service cloud.firestore {
       allow update: if isAdmin() ||
         (isSignedIn() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentCount', 'paidCount']) &&
-          countChangesByAtMostOne('currentCount') &&
-          countChangesByAtMostOne('paidCount'));
+          countChangesBySmallStep('currentCount') &&
+          countChangesBySmallStep('paidCount'));
     }
 
     // 報名票券：本人與主辦方可讀；本人建立自己的票券、只能改繳費狀態；報到狀態只能由主辦方更新
@@ -90,6 +94,7 @@ service cloud.firestore {
         request.resource.data.isCheckedIn == false &&
         request.resource.data.isCancelled == false &&
         hasCompleteProfile(request.auth.uid) &&
+        companionsWithinLimit() &&
         (request.resource.data.get('discountApplied', false) == false ||
           usesValidUnusedCoupon(request.resource.data.couponId)) &&
         (
@@ -142,6 +147,7 @@ service cloud.firestore {
           request.resource.data.isCheckedIn == false &&
           request.resource.data.isCancelled == false &&
           hasCompleteProfile(request.auth.uid) &&
+          companionsWithinLimit() &&
           (request.resource.data.get('discountApplied', false) == false ||
             usesValidUnusedCoupon(request.resource.data.couponId)) &&
           (

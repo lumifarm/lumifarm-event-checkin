@@ -55,8 +55,14 @@ export function renderCheckin(container) {
     if (isProcessing) return;
     isProcessing = true;
     try {
-      const { userName } = await processScannedTicket(decodedText);
-      showResult(`報到成功：${userName}`, true, "✅");
+      const { userName, companions } = await processScannedTicket(decodedText);
+      showResult(
+        companions.length
+          ? `報到成功：${userName}＋同行孩童 ${companions.length} 位（${companions.join("、")}），共 ${companions.length + 1} 人`
+          : `報到成功：${userName}`,
+        true,
+        "✅"
+      );
     } catch (e) {
       showResult(e.message, false, "❌");
     } finally {

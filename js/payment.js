@@ -11,6 +11,7 @@ import {
   runTransaction,
   increment,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { seatsOf } from "./companions.js";
 
 export const BANK_INFO = {
   bankName: "永豐銀行 (807)",
@@ -108,18 +109,23 @@ export async function markPaymentReminderSent(ticketId) {
 }
 
 // 只有主辦方（isAdmin）能把狀態改成 paid，前面 submitPaymentNotice 擋掉了本人自己改成 paid。
-// 同時把活動的「已繳費人數」paidCount +1（開課與否以這個人數判斷）；用交易
-// 確保同一張票按兩次也只會加一次。
-export async function confirmPayment(ticketId) {
+// 同時把活動的「已繳費人數」paidCount 加上這張票的人數（含同行孩童，開課與否
+// 以這個人數判斷）；用交易確保同一張票按兩次也只會加一次。
+// note：會員沒有自己回報、主辦方直接確認時，可以順便記下後五碼或備註。
+export async function confirmPayment(ticketId, { note } = {}) {
   const ticketRef = doc(db, "tickets", ticketId);
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(ticketRef);
     if (!snap.exists()) throw new Error("找不到這張票券");
     const t = snap.data();
     if (t.paymentStatus === "paid") return;
-    tx.update(ticketRef, { paymentStatus: "paid", paymentConfirmedAt: serverTimestamp() });
+    tx.update(ticketRef, {
+      paymentStatus: "paid",
+      paymentConfirmedAt: serverTimestamp(),
+      ...(note ? { paymentNote: note } : {}),
+    });
     if (!t.isCancelled) {
-      tx.update(doc(db, "events", t.eventId), { paidCount: increment(1) });
+      tx.update(doc(db, "events", t.eventId), { paidCount: increment(seatsOf(t)) });
     }
   });
 }
