@@ -1,5 +1,22 @@
-// 行前通知的郵件內容組裝：純字串邏輯，不碰 Firestore，方便跟收件人名單
-// （events.js 的 listActiveParticipantEmails）分開處理。
+// 行前通知：郵件內容組裝（純字串邏輯）＋每個活動的通知草稿存取。
+// 收件人名單在 events.js 的 listActiveParticipantEmails。
+import { db } from "./firebase-config.js";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// 草稿存在 preEventNotices/{eventId}，Firestore 規則只允許主辦方讀寫
+// （內容可能有當天聯絡電話等資訊，不放在所有人都讀得到的活動文件上）
+export async function loadNoticeDraft(eventId) {
+  const snap = await getDoc(doc(db, "preEventNotices", eventId));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function saveNoticeDraft(eventId, { subject, body }) {
+  await setDoc(doc(db, "preEventNotices", eventId), { subject, body, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+export async function markNoticeOpenedInGmail(eventId) {
+  await updateDoc(doc(db, "preEventNotices", eventId), { lastOpenedInGmailAt: serverTimestamp() });
+}
 
 export function buildPreEventNotice({ eventTitle, eventDateText, eventLocation, customMessage }) {
   const subject = `【行前通知】${eventTitle}`;

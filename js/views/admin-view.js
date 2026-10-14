@@ -27,7 +27,13 @@ import {
   adminSetCompanions,
 } from "../events.js";
 import { listAllUsers } from "../tickets.js";
-import { buildPreEventNotice, buildGmailComposeLink } from "../notices.js";
+import {
+  buildPreEventNotice,
+  buildGmailComposeLink,
+  loadNoticeDraft,
+  saveNoticeDraft,
+  markNoticeOpenedInGmail,
+} from "../notices.js";
 import {
   renderTagBadgesHtml,
   tagBadgeHtml,
@@ -351,9 +357,14 @@ export function renderAdmin(container) {
               </div>
               <div>
                 <label class="text-sm text-gray-600 block mb-1">內文</label>
-                <textarea id="notice-body" rows="8" class="w-full border rounded-lg p-2"></textarea>
+                <textarea id="notice-body" rows="16" class="w-full border rounded-lg p-2"></textarea>
               </div>
-              <button type="button" id="notice-send" class="btn-primary text-sm">開啟 Gmail 並發送</button>
+              <p id="notice-draft-status" class="text-xs text-gray-500"></p>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" id="notice-save" class="text-sm border border-emerald-600 text-emerald-700 rounded-lg px-3 py-1.5 hover:bg-emerald-50">💾 儲存草稿</button>
+                <button type="button" id="notice-copy" class="text-sm border rounded-lg px-3 py-1.5 hover:bg-gray-50">📋 複製內文</button>
+                <button type="button" id="notice-send" class="btn-primary text-sm">開啟 Gmail 並發送</button>
+              </div>
               <p class="text-xs text-gray-500">
                 按下後會在新分頁開啟 Gmail 網頁版的寫信視窗（用你目前登入的 Gmail 帳號），收件人已用密件副本（Bcc）帶入所有報名者，確認內容後要在 Gmail 裡按送出才會真的寄出。
               </p>
@@ -920,6 +931,9 @@ export function renderAdmin(container) {
   const noticeSubjectInput = container.querySelector("#notice-subject");
   const noticeBodyInput = container.querySelector("#notice-body");
   const noticeSendBtn = container.querySelector("#notice-send");
+  const noticeSaveBtn = container.querySelector("#notice-save");
+  const noticeCopyBtn = container.querySelector("#notice-copy");
+  const noticeDraftStatus = container.querySelector("#notice-draft-status");
 
   let noticeEventsCache = [];
   let noticeEmails = [];
@@ -935,17 +949,65 @@ export function renderAdmin(container) {
     noticeRecipientCount.textContent = `此活動目前有 ${noticeEmails.length} 位報名者（不含已取消）`;
   }
 
+  // 選到的活動如果有存過草稿，直接帶出主旨與內文
+  async function loadDraftForSelectedEvent() {
+    const eventId = noticeEventSelect.value;
+    noticePreview.classList.add("hidden");
+    noticeDraftStatus.textContent = "";
+    if (!eventId) return;
+    try {
+      const draft = await loadNoticeDraft(eventId);
+      if (!draft || eventId !== noticeEventSelect.value) return;
+      noticeSubjectInput.value = draft.subject || "";
+      noticeBodyInput.value = draft.body || "";
+      noticePreview.classList.remove("hidden");
+      noticeDraftStatus.textContent =
+        `已載入儲存的草稿（最後儲存：${formatDate(draft.updatedAt)}）` +
+        (draft.lastOpenedInGmailAt ? `　上次開啟 Gmail 寄送：${formatDate(draft.lastOpenedInGmailAt)}` : "");
+    } catch (e) {
+      console.warn("讀取行前通知草稿失敗：", e);
+    }
+  }
+
   async function populateNoticeEventSelect() {
     noticeEventsCache = await listEvents();
     noticeEventSelect.innerHTML = noticeEventsCache
       .map((ev) => `<option value="${ev.id}">${ev.title || "（未命名活動）"}</option>`)
       .join("");
+    // 預設選最近一場還沒結束的活動
+    const upcoming = noticeEventsCache.find((ev) => (ev.date?.toMillis?.() ?? 0) >= Date.now());
+    if (upcoming) noticeEventSelect.value = upcoming.id;
     updateRecipientCount();
+    loadDraftForSelectedEvent();
   }
 
   noticeEventSelect.addEventListener("change", () => {
-    noticePreview.classList.add("hidden");
     updateRecipientCount();
+    loadDraftForSelectedEvent();
+  });
+
+  noticeSaveBtn.addEventListener("click", async () => {
+    const eventId = noticeEventSelect.value;
+    if (!eventId) return;
+    noticeSaveBtn.disabled = true;
+    try {
+      await saveNoticeDraft(eventId, { subject: noticeSubjectInput.value, body: noticeBodyInput.value });
+      noticeDraftStatus.textContent = `✅ 草稿已儲存（${new Date().toLocaleString("zh-TW")}）`;
+    } catch (e) {
+      alert("儲存失敗：" + e.message + "\n（如果是權限錯誤，請確認 Firestore 規則已更新、包含 preEventNotices）");
+    } finally {
+      noticeSaveBtn.disabled = false;
+    }
+  });
+
+  noticeCopyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(noticeBodyInput.value);
+      noticeDraftStatus.textContent = "📋 內文已複製，可以直接貼到 Gmail 的信件內容";
+    } catch (e) {
+      noticeBodyInput.select();
+      alert("請手動按 Ctrl+C 複製選取的內文");
+    }
   });
 
   noticeGenerateBtn.addEventListener("click", async () => {
@@ -976,13 +1038,42 @@ export function renderAdmin(container) {
     noticePreview.classList.remove("hidden");
   });
 
-  noticeSendBtn.addEventListener("click", () => {
-    const url = buildGmailComposeLink({
+  noticeSendBtn.addEventListener("click", async () => {
+    const eventId = noticeEventSelect.value;
+    // 先在按下的當下開好新分頁，等存完草稿再導到 Gmail；如果等存完才開，
+    // 有些瀏覽器會當成彈出式廣告擋掉
+    const win = window.open("", "_blank");
+    await updateRecipientCount();
+    if (noticeEmails.length === 0) {
+      win?.close();
+      alert("這個活動目前沒有任何有效報名者，沒有收件人可以寄送。");
+      return;
+    }
+    // 先存一份草稿，之後回來看得到寄了什麼
+    try {
+      await saveNoticeDraft(eventId, { subject: noticeSubjectInput.value, body: noticeBodyInput.value });
+      await markNoticeOpenedInGmail(eventId);
+    } catch (e) {
+      console.warn("儲存行前通知草稿失敗：", e);
+    }
+    let url = buildGmailComposeLink({
       bcc: noticeEmails.join(","),
       subject: noticeSubjectInput.value,
       body: noticeBodyInput.value,
     });
-    window.open(url, "_blank");
+    // 網址太長 Gmail 會打不開：改成只帶收件人與主旨，內文先複製到剪貼簿再自己貼上
+    if (url.length > 7500) {
+      url = buildGmailComposeLink({ bcc: noticeEmails.join(","), subject: noticeSubjectInput.value, body: "" });
+      try {
+        await navigator.clipboard.writeText(noticeBodyInput.value);
+        alert("內文比較長，Gmail 視窗只會先帶入收件人和主旨。\n內文已經複製好了，Gmail 打開後在內容欄位按「貼上」（Ctrl+V）即可。");
+      } catch (e) {
+        alert("內文比較長，Gmail 視窗只會先帶入收件人和主旨，請先按「📋 複製內文」再到 Gmail 貼上。");
+      }
+    }
+    if (win) win.location.href = url;
+    else window.open(url, "_blank");
+    loadDraftForSelectedEvent();
   });
 
   const rosterEventSelect = container.querySelector("#roster-event");

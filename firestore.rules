@@ -191,6 +191,11 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // 行前通知草稿：每個活動一份（文件 ID = 活動 ID），只有主辦方能讀寫
+    match /preEventNotices/{eventId} {
+      allow read, write: if isAdmin();
+    }
+
     // 活動標籤：所有人可讀（活動列表要顯示），只有主辦方能新增/修改/刪除
     match /eventTags/{tagId} {
       allow read: if true;
