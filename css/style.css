@@ -189,3 +189,14 @@ h3 {
   background: none;
   border: none;
 }
+
+/* 主辦專區：上方的分區按鈕列是黏在畫面頂端的（sticky），點按鈕跳到某個區塊時，
+   要留出按鈕列的高度，不然區塊標題和第一個欄位會被按鈕列蓋住 */
+#admin-section section {
+  scroll-margin-top: 7.5rem;
+}
+@media (max-width: 640px) {
+  #admin-section section {
+    scroll-margin-top: 11rem;
+  }
+}
