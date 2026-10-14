@@ -4,6 +4,14 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>光農合作社群-活動報名系統</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#2f6b3e" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png" />
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon-180.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="光農報名" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -29,6 +37,7 @@
         <a href="#/onboarding" data-route="/onboarding" class="hover:underline">新手教學</a>
         <a href="#/contact" data-route="/contact" class="hover:underline">聯絡我們</a>
         <a href="https://www.lumifarm.org/" target="_blank" rel="noopener noreferrer" class="hover:underline">🏠 回官網</a>
+        <button id="btn-install-app" type="button" class="hidden hover:underline">📲 安裝 App</button>
         <button id="btn-login" class="bg-white text-emerald-800 px-4 py-1.5 rounded-full font-bold shadow hover:shadow-md transition">使用 Google 登入</button>
         <div id="nav-user-info" class="hidden relative items-center gap-2">
           <button id="nav-user-toggle" type="button" class="flex items-center gap-2">

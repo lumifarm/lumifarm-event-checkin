@@ -1,5 +1,6 @@
 import { loginWithGoogle, logout, watchAuthState } from "./auth.js";
 import { isCurrentUserAdmin } from "./checkin.js";
+import { clearOfflineTickets } from "./offlineTickets.js";
 
 // 每個頁面都呼叫這個函式來初始化共用的登入/登出導覽列
 export function initNavbar() {
@@ -59,7 +60,11 @@ export function initNavbar() {
     }
   });
 
-  logoutBtn?.addEventListener("click", () => logout());
+  // 登出時把存在這支手機的離線票券一起清掉（共用裝置時不會留給下一個人）
+  logoutBtn?.addEventListener("click", () => {
+    clearOfflineTickets();
+    logout();
+  });
 
   watchAuthState(
     async (user) => {

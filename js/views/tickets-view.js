@@ -8,6 +8,7 @@ import { getMyCoupons, DISCOUNT_PERCENT } from "../discounts.js";
 import { notifyAdmin } from "../notify.js";
 import { courseStatusHtml } from "../courseStatus.js";
 import { companionsOf, ticketAmount } from "../companions.js";
+import { saveOfflineTickets, loadOfflineTickets } from "../offlineTickets.js";
 
 function formatDate(ts) {
   if (!ts) return "時間未定";
@@ -152,6 +153,7 @@ export function renderTickets(container) {
     <div class="max-w-3xl mx-auto">
       <p id="login-prompt" class="hidden text-center text-gray-500 py-16">請先使用 Google 登入以查看你的個人中心與票券。</p>
       <section id="profile-section" class="hidden mb-8"></section>
+      <div id="offline-banner" class="hidden mb-4"></div>
       <h2 class="text-xl font-bold text-gray-800 mb-3">🎫 我的票券</h2>
       <div id="ticket-list" class="hidden space-y-4"></div>
 
@@ -164,6 +166,66 @@ export function renderTickets(container) {
   const historyHeading = container.querySelector("#ticket-history-heading");
   const historyList = container.querySelector("#ticket-history-list");
   const loginPrompt = container.querySelector("#login-prompt");
+  const offlineBanner = container.querySelector("#offline-banner");
+
+  // 收訊不好、連不上資料庫時：改用這支手機上次存下來的票券顯示 QR Code。
+  // 回傳 false 代表手機裡也沒有存過票券，沒辦法顯示離線版。
+  function renderOffline(user) {
+    const saved = loadOfflineTickets(user.uid);
+    if (!saved) return false;
+    const now = Date.now();
+    const tickets = saved.tickets.filter((t) => !t.date || new Date(t.date).getTime() > now - 24 * 60 * 60 * 1000);
+
+    offlineBanner.classList.remove("hidden");
+    offlineBanner.innerHTML = "";
+    const box = document.createElement("div");
+    box.className = "bg-amber-50 border border-amber-300 rounded-xl p-4 text-sm text-amber-800";
+    const msg = document.createElement("p");
+    msg.textContent = `📶 目前連不上網路（或收訊不佳），先顯示這支手機在 ${new Date(saved.savedAt).toLocaleString(
+      "zh-TW"
+    )} 存下的票券。報到時直接出示 QR Code 即可；繳費、取消等操作請等網路恢復後再進行。`;
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "mt-2 underline font-bold";
+    retry.textContent = "重新連線";
+    retry.addEventListener("click", () => render(user));
+    box.append(msg, retry);
+    offlineBanner.appendChild(box);
+
+    profileSection.classList.add("hidden");
+    historyHeading.classList.add("hidden");
+    historyList.innerHTML = "";
+    ticketList.classList.remove("hidden");
+    ticketList.innerHTML = "";
+    if (tickets.length === 0) {
+      ticketList.innerHTML = `<p class="text-gray-500 text-center py-8">手機裡沒有存到進行中的票券</p>`;
+      return true;
+    }
+    tickets.forEach((t) => {
+      const card = document.createElement("div");
+      card.className = "card rounded-xl p-5 flex flex-col md:flex-row gap-4 items-start";
+      const qr = document.createElement("div");
+      qr.className = "shrink-0";
+      const info = document.createElement("div");
+      const title = document.createElement("h3");
+      title.className = "font-bold text-gray-800";
+      title.textContent = t.title;
+      const meta = document.createElement("p");
+      meta.className = "text-sm text-gray-500";
+      meta.textContent = `${t.date ? formatDate(new Date(t.date)) : "時間未定"} · ${t.location}`;
+      info.append(title, meta);
+      if (t.companions?.length) {
+        const kids = document.createElement("p");
+        kids.className = "text-sm text-gray-700 mt-2";
+        kids.textContent = `👧 同行孩童 ${t.companions.length} 位：${t.companions.join("、")}`;
+        info.appendChild(kids);
+      }
+      card.append(qr, info);
+      ticketList.appendChild(card);
+      renderTicketQRCode(qr, t);
+    });
+    return true;
+  }
 
   function wirePaymentButtons(tickets, user) {
     ticketList.querySelectorAll(".btn-pay-notify").forEach((btn) => {
@@ -333,15 +395,42 @@ export function renderTickets(container) {
       </div>`;
   }
 
+  // 每次重新載入都有一個編號，比較慢回來的舊結果不會蓋掉新的畫面
+  let renderSeq = 0;
+  const OFFLINE_FALLBACK_MS = 8000;
+
   async function render(user) {
+    const seq = ++renderSeq;
     if (!user) {
+      offlineBanner.classList.add("hidden");
       profileSection.classList.add("hidden");
       ticketList.classList.add("hidden");
       loginPrompt.classList.remove("hidden");
       return;
     }
-
     loginPrompt.classList.add("hidden");
+
+    if (!navigator.onLine && renderOffline(user)) return;
+
+    // 收訊很差時資料庫可能一直轉圈：8 秒還沒載入完就先顯示存下來的票券，
+    // 之後真的載入完成會自動換成最新的畫面
+    const timer = setTimeout(() => {
+      if (seq === renderSeq) renderOffline(user);
+    }, OFFLINE_FALLBACK_MS);
+    try {
+      await renderOnline(user, seq);
+    } catch (e) {
+      console.warn("載入票券失敗：", e);
+      if (seq === renderSeq && !renderOffline(user)) {
+        ticketList.classList.remove("hidden");
+        ticketList.innerHTML = `<p class="text-red-600 text-center py-8">票券載入失敗，請確認網路連線後重新整理頁面。</p>`;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function renderOnline(user, seq) {
     profileSection.classList.remove("hidden");
     ticketList.classList.remove("hidden");
 
@@ -351,6 +440,7 @@ export function renderTickets(container) {
       getMyPointsHistory(),
       getMyCoupons(),
     ]);
+    if (seq !== renderSeq) return;
     const unusedCouponCount = coupons.filter((c) => c.status === "unused").length;
     const pointsHistoryHtml =
       pointsHistory.length > 0
@@ -412,6 +502,9 @@ export function renderTickets(container) {
       </details>`;
 
     const tickets = await getMyTickets();
+    if (seq !== renderSeq) return;
+    offlineBanner.classList.add("hidden");
+    profileSection.classList.remove("hidden");
     if (tickets.length === 0) {
       ticketList.innerHTML = `<p class="text-gray-500 text-center py-8">尚無報名紀錄</p>`;
       historyHeading.classList.add("hidden");
@@ -461,6 +554,7 @@ export function renderTickets(container) {
     wirePaymentButtons(activeTickets, user);
     wireCancelButtons(activeTickets, user);
     wireDirectCancelButtons(activeTickets, user);
+    saveOfflineTickets(user.uid, activeTickets);
   }
 
   const unsubscribe = onAuthStateChanged(auth, render);

@@ -46,7 +46,13 @@ export function logout() {
 export function watchAuthState(onLogin, onLogout) {
   return onAuthStateChanged(auth, async (user) => {
     if (user) {
-      await ensureUserDoc(user);
+      // 離線（例如活動現場收訊不好）時建立會員資料會失敗，但導覽列還是要
+      // 顯示已登入，「我的票券」才能顯示存在手機裡的票券
+      try {
+        await ensureUserDoc(user);
+      } catch (e) {
+        console.warn("建立／讀取會員資料失敗（可能是離線）：", e);
+      }
       onLogin(user);
     } else {
       onLogout();
