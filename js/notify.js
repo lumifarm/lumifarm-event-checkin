@@ -10,6 +10,9 @@ const EMAILJS_TEMPLATE_ID = "template_lu5fryg";
 // 寄給會員用的第二個樣板（收件人是 {{to_email}}，內容是 {{{message_html}}}）。
 // 還沒在 EmailJS 後台建立、填入 ID 之前留空字串，notifyMember 會直接略過不寄。
 const EMAILJS_MEMBER_TEMPLATE_ID = "template_5gxt22g";
+// 主辦方信箱：「聯絡我們」的留言用寄給會員的同一個通用樣板寄到這裡
+// （EmailJS 免費方案只有兩個樣板，這樣不用再多開一個）
+export const CONTACT_EMAIL = "info@lumifarm.org";
 
 let initialized = false;
 
@@ -59,7 +62,9 @@ function escapeHtml(str) {
 // 會員名字、活動名稱裡就算有特殊字元也不會變成 HTML。跟 notifyAdmin 一樣
 // 不會丟出錯誤、不擋住原本的操作，但會回傳 { ok, reason } 讓呼叫端（例如
 // 主辦方確認收款）可以把寄送結果顯示出來。
-export async function notifyMember({ toEmail, toName, subject, lines }) {
+// replyTo：收件人按「回覆」時要回到哪個信箱；樣板的 Reply To 設成 {{reply_to}}
+// 才會生效（沒設的話就用樣板裡固定的那個），預設是主辦方信箱。
+export async function notifyMember({ toEmail, toName, subject, lines, replyTo = CONTACT_EMAIL }) {
   if (!EMAILJS_MEMBER_TEMPLATE_ID) {
     console.warn("尚未設定寄給會員的 EmailJS 樣板，略過會員通知信");
     return { ok: false, reason: "尚未設定寄給會員的信件樣板" };
@@ -76,6 +81,7 @@ export async function notifyMember({ toEmail, toName, subject, lines }) {
       to_name: toName || "",
       subject: subjectSafe(subject),
       message_html: (lines || []).map(escapeHtml).join("<br>"),
+      reply_to: replyTo,
     });
     return { ok: true };
   } catch (e) {

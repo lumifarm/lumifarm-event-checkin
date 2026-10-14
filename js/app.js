@@ -9,6 +9,7 @@ import { renderOnboarding } from "./views/onboarding-view.js";
 import { renderEventDetail } from "./views/event-detail-view.js";
 import { renderFaq } from "./views/faq-view.js";
 import { renderProfile } from "./views/profile-view.js";
+import { renderContact } from "./views/contact-view.js";
 
 initNavbar();
 
@@ -21,6 +22,7 @@ registerRoute("/onboarding", renderOnboarding);
 registerRoute("/event", renderEventDetail);
 registerRoute("/faq", renderFaq);
 registerRoute("/profile", renderProfile);
+registerRoute("/contact", renderContact);
 
 window.addEventListener("hashchange", renderRoute);
 renderRoute();
