@@ -14,6 +14,15 @@ export async function saveNoticeDraft(eventId, { subject, body }) {
   await setDoc(doc(db, "preEventNotices", eventId), { subject, body, updatedAt: serverTimestamp() }, { merge: true });
 }
 
+// 用 EmailJS 直接寄出後記錄：寄出時間、成功幾封、哪些信箱失敗
+export async function markNoticeSentViaEmailjs(eventId, { sentCount, failedEmails }) {
+  await updateDoc(doc(db, "preEventNotices", eventId), {
+    lastSentViaEmailjsAt: serverTimestamp(),
+    lastSentCount: sentCount,
+    lastFailedEmails: failedEmails,
+  });
+}
+
 export async function markNoticeOpenedInGmail(eventId) {
   await updateDoc(doc(db, "preEventNotices", eventId), { lastOpenedInGmailAt: serverTimestamp() });
 }

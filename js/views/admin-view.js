@@ -33,6 +33,7 @@ import {
   loadNoticeDraft,
   saveNoticeDraft,
   markNoticeOpenedInGmail,
+  markNoticeSentViaEmailjs,
 } from "../notices.js";
 import {
   renderTagBadgesHtml,
@@ -58,6 +59,7 @@ import {
 } from "../memberEmails.js";
 import { companionsOf, seatsOf, ticketAmount, MAX_COMPANIONS } from "../companions.js";
 import { showCompanionsModal } from "../companionForm.js";
+import { notifyMember } from "../notify.js";
 
 const SUMMARY_MAX_CHARS = 200;
 const DESCRIPTION_MAX_CHARS = 500;
@@ -363,8 +365,10 @@ export function renderAdmin(container) {
               <div class="flex flex-wrap gap-2">
                 <button type="button" id="notice-save" class="text-sm border border-emerald-600 text-emerald-700 rounded-lg px-3 py-1.5 hover:bg-emerald-50">💾 儲存草稿</button>
                 <button type="button" id="notice-copy" class="text-sm border rounded-lg px-3 py-1.5 hover:bg-gray-50">📋 複製內文</button>
-                <button type="button" id="notice-send" class="btn-primary text-sm">開啟 Gmail 並發送</button>
+                <button type="button" id="notice-send-direct" class="btn-primary text-sm">✉️ 直接寄出給所有報名者</button>
+                <button type="button" id="notice-send" class="text-sm border rounded-lg px-3 py-1.5 hover:bg-gray-50">改用 Gmail 寄送</button>
               </div>
+              <p id="notice-send-progress" class="hidden text-sm font-bold"></p>
               <p class="text-xs text-gray-500">
                 按下後會在新分頁開啟 Gmail 網頁版的寫信視窗（用你目前登入的 Gmail 帳號），收件人已用密件副本（Bcc）帶入所有報名者，確認內容後要在 Gmail 裡按送出才會真的寄出。
               </p>
@@ -934,6 +938,8 @@ export function renderAdmin(container) {
   const noticeSaveBtn = container.querySelector("#notice-save");
   const noticeCopyBtn = container.querySelector("#notice-copy");
   const noticeDraftStatus = container.querySelector("#notice-draft-status");
+  const noticeSendDirectBtn = container.querySelector("#notice-send-direct");
+  const noticeSendProgress = container.querySelector("#notice-send-progress");
 
   let noticeEventsCache = [];
   let noticeEmails = [];
@@ -963,6 +969,9 @@ export function renderAdmin(container) {
       noticePreview.classList.remove("hidden");
       noticeDraftStatus.textContent =
         `已載入儲存的草稿（最後儲存：${formatDate(draft.updatedAt)}）` +
+        (draft.lastSentViaEmailjsAt
+          ? `　上次直接寄出：${formatDate(draft.lastSentViaEmailjsAt)}（${draft.lastSentCount || 0} 封）`
+          : "") +
         (draft.lastOpenedInGmailAt ? `　上次開啟 Gmail 寄送：${formatDate(draft.lastOpenedInGmailAt)}` : "");
     } catch (e) {
       console.warn("讀取行前通知草稿失敗：", e);
@@ -1036,6 +1045,86 @@ export function renderAdmin(container) {
     noticeSubjectInput.value = subject;
     noticeBodyInput.value = body;
     noticePreview.classList.remove("hidden");
+  });
+
+  // 直接用 EmailJS 一封一封寄給每位報名者（用寄給會員的通用樣板，每人一封、
+  // 彼此看不到對方信箱）。EmailJS 免費方案有每秒的寄送頻率限制與每月 200 封
+  // 額度，所以逐封寄、每封間隔一點時間，並顯示進度；失敗的信箱最後列出來。
+  const DIRECT_SEND_GAP_MS = 1500;
+  noticeSendDirectBtn.addEventListener("click", async () => {
+    const eventId = noticeEventSelect.value;
+    const subject = noticeSubjectInput.value.trim();
+    const body = noticeBodyInput.value.trim();
+    if (!eventId || !subject || !body) {
+      alert("請先確認已選擇活動，且主旨與內文都有內容");
+      return;
+    }
+    await updateRecipientCount();
+    const recipients = [...noticeEmails];
+    if (recipients.length === 0) {
+      alert("這個活動目前沒有任何有效報名者，沒有收件人可以寄送。");
+      return;
+    }
+    let previous = null;
+    try {
+      previous = await loadNoticeDraft(eventId);
+    } catch (e) {
+      // 讀不到就當作沒寄過
+    }
+    const warnAgain = previous?.lastSentViaEmailjsAt
+      ? `\n\n⚠️ 這個活動在 ${formatDate(previous.lastSentViaEmailjsAt)} 已經直接寄出過一次（${previous.lastSentCount || 0} 封），再寄一次大家會收到兩封。`
+      : "";
+    if (
+      !confirm(
+        `確定要把這封行前通知直接寄給 ${recipients.length} 位報名者嗎？\n\n主旨：${subject}\n\n` +
+          `每人會各收到一封（看不到彼此的信箱），寄件者是光農合作社群，會用掉 ${recipients.length} 封 EmailJS 的每月額度（免費方案每月 200 封）。${warnAgain}`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await saveNoticeDraft(eventId, { subject: noticeSubjectInput.value, body: noticeBodyInput.value });
+    } catch (e) {
+      console.warn("儲存行前通知草稿失敗：", e);
+    }
+
+    noticeSendDirectBtn.disabled = true;
+    noticeSendBtn.disabled = true;
+    noticeSendProgress.classList.remove("hidden");
+    noticeSendProgress.className = "text-sm font-bold text-gray-700";
+    const lines = noticeBodyInput.value.split("\n");
+    const failed = [];
+    let sent = 0;
+    for (let i = 0; i < recipients.length; i++) {
+      noticeSendProgress.textContent = `寄送中 ${i + 1} / ${recipients.length}…（請不要關閉這個頁面）`;
+      const mail = await notifyMember({ toEmail: recipients[i], subject: noticeSubjectInput.value, lines });
+      if (mail.ok) sent += 1;
+      else failed.push(recipients[i]);
+      // 寄不出去的原因是 EmailJS 根本沒載入（多半是廣告攔截器），後面也不用再試了
+      if (!mail.ok && i === 0 && /沒有載入|尚未設定/.test(mail.reason)) {
+        failed.push(...recipients.slice(1));
+        noticeSendProgress.textContent = "";
+        alert(`沒有寄出：${mail.reason}。\n請暫時關閉廣告攔截器、重新整理後再試，或改用「改用 Gmail 寄送」。`);
+        break;
+      }
+      if (i < recipients.length - 1) await new Promise((r) => setTimeout(r, DIRECT_SEND_GAP_MS));
+    }
+
+    if (sent > 0) {
+      try {
+        await markNoticeSentViaEmailjs(eventId, { sentCount: sent, failedEmails: failed });
+      } catch (e) {
+        console.warn("記錄寄送結果失敗：", e);
+      }
+    }
+    noticeSendDirectBtn.disabled = false;
+    noticeSendBtn.disabled = false;
+    noticeSendProgress.className = `text-sm font-bold ${failed.length ? "text-red-600" : "text-emerald-700"}`;
+    noticeSendProgress.textContent = failed.length
+      ? `已寄出 ${sent} 封，${failed.length} 封失敗：${failed.join("、")}（可以改用 Gmail 寄給這幾位）`
+      : `✅ 已寄出 ${sent} 封行前通知給所有報名者`;
+    loadDraftForSelectedEvent();
   });
 
   noticeSendBtn.addEventListener("click", async () => {
